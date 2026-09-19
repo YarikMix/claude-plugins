@@ -95,7 +95,7 @@ docs/superpowers/specs/2026-09-19-typescript-native-lsp-design.md
 3. Установка: `/plugin marketplace add YarikMix/claude-plugins`, `/plugin install typescript-native-lsp@yarikmix-plugins`, перезапуск Claude Code.
 4. Несовместимость с `typescript-lsp@claude-plugins-official`: отключить, иначе два сервера делят одни расширения, а официальный с глобальным TS 7 даёт ложные ошибки.
 5. Если LSP молчит: `tsc` старее 7 (флаг `--lsp` неизвестен, сервер не стартует), `tsc` нет в PATH, сессия не перезапущена после установки.
-6. Ограничение: работает глобальный TypeScript, а не копия из `node_modules` проекта; при расхождении версий диагностика может отличаться от `tsc --noEmit` проекта.
+6. Ограничения: плагин даёт только навигацию, ошибок типов не показывает — за ними к `tsc --noEmit`; работает глобальный TypeScript, а не копия из `node_modules` проекта.
 
 ### `plugins/typescript-native-lsp/LICENSE`
 
@@ -110,7 +110,7 @@ MIT, `Copyright (c) 2026 Yaroslav Mihalev`.
 1. Пользователь добавляет маркетплейс и ставит плагин; запись попадает в `~/.claude/plugins/installed_plugins.json` со scope `user`.
 2. На старте сессии Claude Code читает `lspServers` включённых плагинов.
 3. При обращении к файлу с расширением из `extensionToLanguage` запускается `tsc --lsp --stdio`; `tsconfig.json` сервер находит сам.
-4. Инструмент `LSP` (`hover`, `goToDefinition`, `findReferences`, …) и диагностика после правок идут через этот сервер.
+4. Инструмент `LSP` (`hover`, `goToDefinition`, `findReferences`, …) идёт через этот сервер. Диагностика после правок не приходит — см. «Результаты проб».
 
 ## Проверка
 
