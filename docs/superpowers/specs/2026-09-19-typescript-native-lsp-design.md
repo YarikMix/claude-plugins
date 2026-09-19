@@ -39,6 +39,7 @@
 ## Структура
 
 ```text
+.gitattributes
 .claude-plugin/marketplace.json
 plugins/typescript-native-lsp/
   README.md
@@ -46,6 +47,8 @@ plugins/typescript-native-lsp/
 README.md
 docs/superpowers/specs/2026-09-19-typescript-native-lsp-design.md
 ```
+
+`.gitattributes` задаёт `* text=auto eol=lf`: репозиторий собирается на Windows, а читают его и на POSIX, и без правила git подменяет LF на CRLF при checkout.
 
 ### `.claude-plugin/marketplace.json`
 
