@@ -1,0 +1,124 @@
+# Serena: бэкенд `typescript_native` — дизайн
+
+Дата: 2026-09-20
+
+## Задача
+
+Добавить в [Serena](https://github.com/oraios/serena) языковой бэкенд для нативного сервера TypeScript 7 (`tsc --lsp --stdio`) и довести его до PR в `oraios/serena`. Работа идёт в форке `YarikMix/serena`.
+
+Штатный бэкенд `typescript` для этого не годится: он сам ставит `typescript@5.9.3` и `typescript-language-server@5.1.3` и запускает обёртку над `tsserver.js`. В TypeScript 7 `tsserver.js` нет, поэтому с настройкой `typescript_version: 7.0.2` сервер не стартует:
+
+```text
+Could not find a valid TypeScript installation. Please ensure that the "typescript"
+dependency is installed in the workspace or that a valid `tsserver.path` is specified.
+```
+
+С настройками по умолчанию Serena работает и на проекте с TS 7, но анализирует его компилятором 5.9.3, а не тем, которым проект проверяется.
+
+## Что установлено пробами
+
+Пробы 2026-09-20: Windows 11, Serena `main` (`c4dc91a`), копия `react-from-scratch-course/23-svg/src`, сервер `typescript-go 7.0.2`, вызов языкового слоя `solidlsp` из скрипта, без MCP.
+
+| Проба | Результат |
+|---|---|
+| штатный бэкенд + `ls_path` на обёртку `tsc --lsp` | не стартует: `assert init_response["capabilities"]["textDocumentSync"] == 2` |
+| то же с обходом двух `assert` на capabilities | стартует за 10,1 с; диагностика по pull — `2322` на файле с ошибкой, 0 на чистых; символы документа найдены; вызов `createFiberRoot` найден |
+| capabilities нативного сервера | `textDocumentSync` — объект `{"openClose": true, "change": 2, "save": true}`; у `completionProvider` больше `triggerCharacters`, чем ждёт штатный бэкенд. Оба ответа соответствуют LSP |
+| `textDocument/references` на `createRoot`, напрямую к серверу | `includeDeclaration: false` → `[]`; `true` → `render.ts:45`, `index.ts:5`. Реэкспорт `export { createRoot } from` сервер считает объявлением |
+
+Клиент Serena умеет pull-диагностику: `request_text_document_diagnostics` сначала шлёт `textDocument/diagnostic` и только при отказе ждёт `publishDiagnostics`. Для нового бэкенда здесь ничего писать не нужно.
+
+## Предыстория в upstream
+
+- Issue [#1402](https://github.com/oraios/serena/issues/1402) и PR [#1406](https://github.com/oraios/serena/pull/1406) (`typescript_tsgo`, +222/−6, 8 файлов, апрель 2026). Сопровождающий: «feel free to open a PR… adding `typescript_tsgo` is not a problem».
+- PR не вошёл: CI падал на `npm install @typescript/native-preview@7.0.0-dev.20250601` (несуществующая версия), автор перестал отвечать и 2026-07-13 сам закрыл issue и PR.
+- Замечания ревью, обязательные и для этой работы:
+  1. отдельный файл тестов не нужен — новый бэкенд добавляется в параметризацию существующих TypeScript-тестов; добавление может быть условным локально, но в CI обязано быть, через `in_ci` из `conftest.py`; при необходимости правится `pytest.yml`;
+  2. зависимость ставится на лету через npm, по образцу остальных npm-серверов;
+  3. документация правится по итогу.
+- С июля 2026 `tsc --lsp` входит в обычный пакет `typescript@7`; превью-пакет `@typescript/native-preview` не нужен.
+
+## Решения
+
+| Вопрос | Решение | Почему |
+|---|---|---|
+| Главный результат | PR в `oraios/serena` | польза всем, форк не надо поддерживать вечно; до слияния форк ставится через `uvx --from git+https://github.com/YarikMix/serena` |
+| Форма | отдельный класс на базе `SolidLanguageServer` | на это согласился сопровождающий; штатный бэкенд не меняется; не наследуется tsserver-специфика |
+| Какой TypeScript запускается | свой, зафиксированной версии, + стандартный `ls_path` | шаблон всех npm-серверов Serena; точное совпадение с проектом даёт `ls_path` на `node_modules/.bin/tsc` |
+| Разница в `includeDeclaration` | сначала измерить | обход попадает в PR, только если без него падают существующие тесты или теряются обычные импорты |
+| Имя | `typescript_native` | `tsgo` — имя превью-пакета; «native» останется верным и для TS 8. Переименование на ревью дёшево |
+
+Отвергнуто: наследник `TypeScriptLanguageServer` (унаследует ожидание событий индексации tsserver, разбор его аварийных сообщений и жёсткие `assert`); смягчение `assert` в штатном бэкенде (меняет существующее поведение, на Windows требует обёртку `.cmd`, сопровождающий просил отдельный бэкенд); внешний пакет через entry point `solidlsp.language_server_registration` (в upstream ничего не попадает); автоопределение TypeScript проекта (такого поведения нет ни у одного бэкенда Serena).
+
+## Компоненты
+
+Состав файлов повторяет PR #1406 с учётом ревью.
+
+### `src/solidlsp/language_servers/typescript_native_language_server.py`
+
+Класс `TypeScriptNativeLanguageServer(SolidLanguageServer)` по образцу `vts_language_server.py`.
+
+- SPDX-заголовок, как у соседних файлов.
+- Константы версий по принятой в Serena схеме: `INITIAL_TYPESCRIPT_NATIVE_VERSION = "7.0.2"`, `DEFAULT_TYPESCRIPT_NATIVE_VERSION = "7.0.2"`. Каталог установки: `ts-native-lsp` для `INITIAL_*`, `ts-native-lsp-<версия>` для остальных.
+- `DependencyProvider` на `LanguageServerDependencyProviderSinglePath`:
+  - проверяет наличие `node` и `npm` тем же сообщением, что у соседей;
+  - ставит `typescript@<версия>` через `build_npm_install_command`, учитывает настройку `npm_registry`;
+  - настройки в `ls_specific_settings["typescript_native"]`: `typescript_version`, `npm_registry`, стандартный `ls_path`;
+  - команда запуска: `[<путь к node_modules/.bin/tsc>, "--lsp", "--stdio"]`.
+- `_create_base_initialize_params` возвращает только специфичное для языка; общие поля задаёт `initialize_params.py`, переопределять их нельзя.
+- `_start_server`: обработчики `client/registerCapability`, `workspace/configuration`, `window/logMessage`, `$/progress`; после `initialize` проверяется только наличие `textDocumentSync`, без сравнения с точными значениями; затем `initialized`.
+- `is_ignored_dirname` отбрасывает `node_modules`, `dist`, `build`, `coverage`, как штатный бэкенд.
+- `_get_wait_time_for_cross_file_referencing` и ожидание готовности — по результату измерения 2 ниже; по умолчанию без ожидания.
+- Если процесс сервера завершился на старте (TypeScript ниже 7 не знает `--lsp`), исключение называет причину и настройку `typescript_version`, а не показывает голую трассировку.
+
+### `src/solidlsp/ls_config.py`
+
+`TYPESCRIPT_NATIVE = "typescript_native"` в разделе альтернативных серверов рядом с `TYPESCRIPT_VTS`, с docstring; те же расширения файлов, что у `TYPESCRIPT`; привязка к новому классу в том же месте, где привязан `VtsLanguageServer`.
+
+### Тесты
+
+- `test/solidlsp/typescript/*.py`: `LanguageServerId.TYPESCRIPT_NATIVE` добавляется в `parametrize` рядом с `LanguageServerId.TYPESCRIPT`. Новых файлов тестов нет.
+- `test/conftest.py`: маркер `typescript` для нового id; участие в списках языков — там же, где участвует `TYPESCRIPT_VTS`.
+- Серверу нужны только `node` и `npm` — то же, что штатному бэкенду, поэтому ожидается безусловное добавление. Условие через `in_ci` вводится, только если измерение 3 покажет локальное препятствие.
+- `.github/workflows/pytest.yml` правится, только если тестам не хватает окружения.
+
+### Документация
+
+- `docs/01-about/020_programming-languages.md`: строка про `typescript_native` — что это, когда выбирать, требование `node`/`npm`, настройки, известные отличия от штатного бэкенда.
+- `CHANGELOG.md`: запись в разделе «Language Servers».
+
+## Измерения до кода
+
+Выполняются первыми, результаты записываются в этот документ; от них зависит код.
+
+1. **`includeDeclaration: false`.** На тестовом TypeScript-репозитории Serena (лежит под `test/resources/repos`, точный путь берётся из фикстуры существующих тестов) сравнить ответы сервера при `false` и `true` для символа с импортом, вызовом и реэкспортом. Критерий: обход (`_send_references_request` с `true` + отсечение определения, найденного через `textDocument/definition`) входит в PR, если без него падает хотя бы один существующий тест или теряются обычные `import`. Иначе — строка в документации.
+2. **Готовность сервера.** Шлёт ли `typescript-go` `$/progress` и отвечает ли на запросы сразу после `initialized`. Критерий: ожидание вводится, только если первый запрос после старта возвращает неполный результат.
+3. **Существующие тесты без правок кода.** Прогнать `test/solidlsp/typescript` на новом бэкенде сразу после минимальной реализации; список упавших определяет остаток работы.
+
+## Проверка
+
+- `pytest test/solidlsp/typescript` на Windows — оба бэкенда зелёные; штатный обязан остаться зелёным без изменений.
+- `poe format`, `poe type-check`.
+- Проба на копии `23-svg`: диагностика `2322`, чистые файлы без ошибок, символы, ссылки. Проба для ссылок обязана включать символ с реэкспортом — именно на нём поведение серверов расходится, и без него зелёный результат ничего не говорит.
+- Сквозной запуск через MCP с Claude Code — последним шагом, во временном проекте, не в курсе.
+
+## Git
+
+- Клон форка: `F:\Github\serena`; remote `origin` — `YarikMix/serena`, `upstream` — `oraios/serena`.
+- Ветка `typescript-native-ls` от свежего `upstream/main`. Коммиты в ветку разрешены.
+- Push и открытие PR — только по отдельной команде владельца. CLA принимает владелец, когда бот попросит.
+- Спека и план живут в `YarikMix/claude-plugins`, а не в ветке PR: в upstream они попасть не должны.
+
+## Риски
+
+- **Ревью upstream.** Сопровождающие могут попросить другое имя или иную структуру; PR может ждать долго. До слияния рабочий вариант — форк.
+- **Поведение `typescript-go` меняется.** Сервер молод; решения по `includeDeclaration` и готовности привязаны к 7.0.2 и записываются с версией.
+- **CI upstream.** Локально проверяется Windows; Linux и macOS проверит только CI после открытия PR.
+- **Инструменты редактирования Serena** (переименование, замена тела символа) покрываются только в объёме существующих тестов.
+
+## Вне этой работы
+
+- Автоопределение TypeScript проекта.
+- Изменения штатного бэкенда `typescript`.
+- Сообщение о поведении `includeDeclaration` в `microsoft/typescript-go`.
+- Подключение Serena к курсу `react-from-scratch-course`.
