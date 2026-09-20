@@ -168,7 +168,24 @@ dependency is installed in the workspace or that a valid `tsserver.path` is spec
 
 Побочное наблюдение, не наше: `serena project health-check` на консоли Windows с cp1251 падает при печати итоговой строки с эмодзи (`UnicodeEncodeError`), хотя сама проверка пройдена; обходится `PYTHONIOENCODING=utf-8`.
 
-Не проверено: Linux и macOS (проверит CI upstream); работа агента Claude Code с этими инструментами в живой сессии — проверен сам MCP-сервер, но не поведение агента; инструменты редактирования Serena сверх существующих тестов.
+### Живая сессия Claude Code
+
+2026-09-20, проект `F:\Github\2026_H2\react` (TypeScript 7, 40 файлов). Serena подключена из ветки форка: `claude mcp add serena -- uvx --from git+https://github.com/YarikMix/serena@typescript-native-ls serena start-mcp-server --context claude-code --project <path>`; язык задан командой `serena project create --language typescript_native <path>` до первого запуска — при автоопределении Serena выбрала бы `typescript` и молча подняла бы штатный бэкенд. Лог сессии `~/.serena/logs/2026-09-20/mcp_20260920-131148_8148.txt` подтверждает `Starting language server typescript_native`, старт 0,079 с. Каждый ответ агента сверен независимым инструментом.
+
+| Просьба агенту | Ответ | Сверка |
+|---|---|---|
+| кто ссылается на `bubbleSubtreeFlags` | определение `flags.ts:16`, импорт `fiber.ts:18`, вызов `fiber.ts:64` | `grep` по границе слова — те же три места; импорт в ответе есть, то есть обход ссылок работает в живой сессии |
+| диагностика `src/hooks.ts` | пусто | контроль от обратного: временный файл с `const x: number = "text"` через тот же бэкенд на этом проекте дал `2322`, `hooks.ts` — пусто; канал жив, файл чист |
+| переименовать приватную `getKey` → `getNodeKey` | 1 файл, 4 строки | `git diff`: объявление `reconcile.ts:149` и вызовы на строках 81, 104, 157; `\bgetKey\b` в `src` не осталось |
+| переименовать экспортируемую `bubbleSubtreeFlags` → `bubbleChildFlags` | 2 файла, 3 строки | `git diff`: объявление `flags.ts:16`, импорт `fiber.ts:18`, вызов `fiber.ts:64`; старое имя осталось только в заметке `.serena/memories/core.md` |
+
+Наблюдения:
+
+- Диагностика по файлу не заменяет `typecheck`: в этом проекте `tsc --noEmit` падает с `TS2688: Cannot find type definition file for 'bun'` (зависимости не установлены), а `get_diagnostics_for_file` отвечает «пусто» — ошибка уровня конфигурации к файлу не привязана.
+- Семантическое переименование не трогает заметки онбординга Serena: после рефакторинга их правят отдельно.
+- В проекте одновременно подключён CodeGraph, чей `CLAUDE.md` советует идти в граф первым; в просьбах агенту Serena называлась явно.
+
+Не проверено: Linux и macOS (проверит CI upstream); замена тела символа и остальные инструменты редактирования Serena, кроме переименования.
 
 ## Проверка
 
