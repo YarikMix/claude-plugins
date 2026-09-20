@@ -115,6 +115,45 @@ dependency is installed in the workspace or that a valid `tsserver.path` is spec
 - **`implementation` поддержан:** `implementationProvider: true`. Тесты на implementations параметризуются обоими бэкендами. `renameProvider`: `{"prepareProvider": true}`.
 - **Поток `window/logMessage`.** Сервер шлёт сообщения уровня Info (`type: 3`) непрерывно: пара «Scheduling new diagnostics refresh… / Running scheduled diagnostics refresh» каждые 0,5 с — 24 строки за 6 с. Объявление клиентом `textDocument.diagnostic` на это не влияет (24 и 24). Отклонение от плана: обработчик пишет сообщения уровней Info и Log на `debug`, а Error и Warning — на `info`, иначе лог Serena забивается.
 
+## Результаты реализации
+
+2026-09-20, ветка `typescript-native-ls` клона `F:\Github\serena`, три коммита поверх `upstream/main` (`c4dc91a7`):
+
+| Коммит | Содержание |
+|---|---|
+| `58a669af` | класс `TypeScriptNativeLanguageServer`, регистрация в `ls_config.py`, параметризация трёх тестовых файлов, тест проверки версии |
+| `d14739eb` | переопределение `_send_references_request`, фикстура `reexport.ts`, тест `test_references_include_imports_and_reexports` |
+| `725d1d91` | документация и changelog |
+
+Итог: 9 файлов, +304/−13. Штатный бэкенд `typescript` не изменён.
+
+Тесты на Windows: `pytest test/solidlsp/typescript` — 32 passed, 0 failed, 0 skipped (база до правок по трём файлам — 9 passed). В трёх параметризованных файлах: `[typescript_native]` — 10 PASSED, `[typescript]` — 10 PASSED, плюс тест проверки версии. `poe lint`, `poe format`, `poe type-check` — чисто.
+
+Проверено, что тесты умеют краснеть: тест проверки версии падает (`DID NOT RAISE`) при условии `< 0` вместо `< 7`; тест ссылок на `typescript_native` был красным до обхода (`import in use_helper.ts not reported: {('use_helper.ts', 4), ('index.ts', 20)}`) при зелёном штатном бэкенде.
+
+Проверено, что тесты шли на нужном сервере: бэкенд сам поставил `typescript@7.0.2` в `~/.solidlsp/language_servers/static/TypeScriptNativeLanguageServer/ts-native-lsp`, ответ `initialize` — `serverInfo: typescript-go 7.0.2`.
+
+Проба на копии `react-from-scratch-course/23-svg/src` (эталоны — `tsc --noEmit` и `grep` по границам слова):
+
+| Проба | Эталон | Получено |
+|---|---|---|
+| диагностика `src/lsp-probe.ts` | `TS2322` | `[2322]` |
+| диагностика `src/render.ts`, `src/commit.ts` | ошибок нет | `[]`, `[]` |
+| ссылки на `createRoot` | `src/index.ts:5` (реэкспорт) | `['src/index.ts:5']` |
+| ссылки на `createFiberRoot` | `src/render.ts:6` (импорт), `src/render.ts:46` (вызов) | `['src/render.ts:46', 'src/render.ts:6']` |
+
+Отклонения от плана:
+
+- Поддержка implementations объявляется не в `ls_config.py`, а classmethod `supports_implementation_request` в классе бэкенда — так устроен upstream; пятого места регистрации в плане не было.
+- Из `initialize` убраны `window.workDoneProgress` и обработчик `window/workDoneProgress/create`: сервер `$/progress` не присылает.
+- `window/logMessage` уровней Info и Log пишется на `debug` (см. «Результаты измерений»).
+- Тест ссылок строже планового: проверяет конкретные строки импорта, вызова и реэкспорта и отсутствие самого определения.
+- Обход ссылок переписан под проверку типов `ty`: ответ `definition` сужается по `isinstance(..., list)`, ключ сравнения строит типизированный `_definition_start`.
+
+Наблюдение про длинные пути Windows. Первая проба направила каталог установки (`solidlsp_dir`) в глубокий scratchpad, путь до `tsc.exe` вышел 286 символов, и сервер умер на `initialize`: Node не смог разрешить `#getExePath` из `typescript/lib/tsc.js` (`ERR_PACKAGE_IMPORT_NOT_DEFINED`). С каталогом по умолчанию та же проба прошла. Это свойство пакета `typescript@7` под Windows, а не бэкенда, но пользователь с длинным домашним путём увидит невнятную ошибку; в PR не входит.
+
+Не проверено: Linux и macOS (проверит CI upstream); сквозной запуск через MCP с Claude Code; инструменты редактирования Serena сверх существующих тестов.
+
 ## Проверка
 
 - `pytest test/solidlsp/typescript` на Windows — оба бэкенда зелёные; штатный обязан остаться зелёным без изменений.
