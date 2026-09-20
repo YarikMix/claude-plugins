@@ -95,6 +95,26 @@ dependency is installed in the workspace or that a valid `tsserver.path` is spec
 2. **Готовность сервера.** Шлёт ли `typescript-go` `$/progress` и отвечает ли на запросы сразу после `initialized`. Критерий: ожидание вводится, только если первый запрос после старта возвращает неполный результат.
 3. **Существующие тесты без правок кода.** Прогнать `test/solidlsp/typescript` на новом бэкенде сразу после минимальной реализации; список упавших определяет остаток работы.
 
+## Результаты измерений
+
+2026-09-20, Windows 11, сервер `typescript-go 7.0.2` (глобальный `tsc`), клон Serena на `c4dc91a7`. Сервер опрошен напрямую скриптом на стандартной библиотеке Python, без Serena. Фикстура — копия `test/resources/repos/typescript/test_repo` с добавленным `reexport.ts` (`export { helperFunction } from "./index";`). Эталон мест от `grep -n helperFunction *.ts`: определение `index.ts:13`, вызов `index.ts:21`, реэкспорт `reexport.ts:1`, импорт `use_helper.ts:1`, вызов `use_helper.ts:5`.
+
+База (Task 1): существующие `test_typescript_basic.py`, `test_typescript_diagnostics.py`, `test_typescript_ignored_dirs.py` на штатном бэкенде — 9 passed.
+
+| Запрос ссылок на `helperFunction` | Ответ |
+|---|---|
+| нативный, холодный, `includeDeclaration=False` | `index.ts:21`, `use_helper.ts:5` |
+| нативный, через 6 с, `includeDeclaration=False` | `index.ts:21`, `use_helper.ts:5` |
+| нативный, `includeDeclaration=True` | `index.ts:13`, `index.ts:21`, `reexport.ts:1`, `use_helper.ts:1`, `use_helper.ts:5` |
+| штатный бэкенд Serena на той же фикстуре | `index.ts:21`, `reexport.ts:1`, `use_helper.ts:1`, `use_helper.ts:5` |
+
+Решения:
+
+- **`NEED_REFERENCES_WORKAROUND` = да.** При `False` нативный сервер отбрасывает не только реэкспорт, но и обычный импорт `use_helper.ts:1`. Ответ при `True` без определения совпадает с ответом штатного бэкенда место в место, то есть обход даёт точный паритет.
+- **`NEED_READINESS_WAIT` = нет.** Холодный ответ равен тёплому. Уведомлений `$/progress` сервер не присылает вовсе, хотя клиент объявил `window.workDoneProgress`.
+- **`implementation` поддержан:** `implementationProvider: true`. Тесты на implementations параметризуются обоими бэкендами. `renameProvider`: `{"prepareProvider": true}`.
+- **Поток `window/logMessage`.** Сервер шлёт сообщения уровня Info (`type: 3`) непрерывно: пара «Scheduling new diagnostics refresh… / Running scheduled diagnostics refresh» каждые 0,5 с — 24 строки за 6 с. Объявление клиентом `textDocument.diagnostic` на это не влияет (24 и 24). Отклонение от плана: обработчик пишет сообщения уровней Info и Log на `debug`, а Error и Warning — на `info`, иначе лог Serena забивается.
+
 ## Проверка
 
 - `pytest test/solidlsp/typescript` на Windows — оба бэкенда зелёные; штатный обязан остаться зелёным без изменений.
