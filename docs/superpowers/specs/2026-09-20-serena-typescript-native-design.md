@@ -152,7 +152,23 @@ dependency is installed in the workspace or that a valid `tsserver.path` is spec
 
 Наблюдение про длинные пути Windows. Первая проба направила каталог установки (`solidlsp_dir`) в глубокий scratchpad, путь до `tsc.exe` вышел 286 символов, и сервер умер на `initialize`: Node не смог разрешить `#getExePath` из `typescript/lib/tsc.js` (`ERR_PACKAGE_IMPORT_NOT_DEFINED`). С каталогом по умолчанию та же проба прошла. Это свойство пакета `typescript@7` под Windows, а не бэкенда, но пользователь с длинным домашним путём увидит невнятную ошибку; в PR не входит.
 
-Не проверено: Linux и macOS (проверит CI upstream); сквозной запуск через MCP с Claude Code; инструменты редактирования Serena сверх существующих тестов.
+### Сквозная проверка через MCP
+
+2026-09-20. Ветка запушена в форк (`YarikMix/serena@typescript-native-ls`), PR не открыт по решению владельца. Временный проект — копия `23-svg/src` с пробным файлом, язык `typescript_native` задан через `serena project create --language typescript_native`.
+
+| Проверка | Результат |
+|---|---|
+| `serena project health-check` | пройден: старт сервера 0,083 с; `get_symbols_overview`, `find_symbol`, `find_referencing_symbols` отработали; у `isValidElement` найдена 1 ссылка — реэкспорт `index.ts:1`, что совпадает с `grep` и подтверждает обход на уровне инструмента |
+| MCP-сервер по stdio (`serena start-mcp-server --context claude-code --project <path>`), клиент на MCP SDK | 21 инструмент; `find_symbol createRoot` → `src/render.ts`, строки 44–61 |
+| `find_referencing_symbols createRoot` через MCP | `src/index.ts`, строка 4 (реэкспорт) |
+| `find_referencing_symbols createFiberRoot` через MCP | `src/render.ts`, строки 5 (импорт) и 45 (вызов) |
+| `get_diagnostics_for_file` через MCP | `src/lsp-probe.ts` → `2322 Type 'string' is not assignable to type 'number'`; `src/render.ts`, `src/commit.ts` → `{}`. Совпадает с `tsc --noEmit` |
+
+Найдено и закрыто по ходу: список языков в `src/serena/resources/project.template.yml` генерируется `scripts/print_language_list.py` и не содержал `typescript_native`; перегенерирован, изменились ровно две строки (коммит `7e08af72`).
+
+Побочное наблюдение, не наше: `serena project health-check` на консоли Windows с cp1251 падает при печати итоговой строки с эмодзи (`UnicodeEncodeError`), хотя сама проверка пройдена; обходится `PYTHONIOENCODING=utf-8`.
+
+Не проверено: Linux и macOS (проверит CI upstream); работа агента Claude Code с этими инструментами в живой сессии — проверен сам MCP-сервер, но не поведение агента; инструменты редактирования Serena сверх существующих тестов.
 
 ## Проверка
 
