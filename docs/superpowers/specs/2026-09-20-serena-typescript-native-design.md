@@ -67,9 +67,9 @@ dependency is installed in the workspace or that a valid `tsserver.path` is spec
   - команда запуска: `[<путь к node_modules/.bin/tsc>, "--lsp", "--stdio"]`.
 - `_create_base_initialize_params` возвращает только специфичное для языка; общие поля задаёт `initialize_params.py`, переопределять их нельзя.
 - `_start_server`: обработчики `client/registerCapability`, `workspace/configuration`, `window/logMessage`, `$/progress`; после `initialize` проверяется только наличие `textDocumentSync`, без сравнения с точными значениями; затем `initialized`.
-- `is_ignored_dirname` отбрасывает `node_modules`, `dist`, `build`, `coverage`, как штатный бэкенд.
+- `is_ignored_dirname` отбрасывает `node_modules`, `dist`, `build`, как штатный бэкенд. Каталог `coverage` игнорировать нельзя: существующий тест `test_source_dirs_not_ignored` требует, чтобы исходники в каталоге с таким именем оставались видимыми.
 - `_get_wait_time_for_cross_file_referencing` и ожидание готовности — по результату измерения 2 ниже; по умолчанию без ожидания.
-- Если процесс сервера завершился на старте (TypeScript ниже 7 не знает `--lsp`), исключение называет причину и настройку `typescript_version`, а не показывает голую трассировку.
+- TypeScript ниже 7 не знает `--lsp`. Поэтому управляемая версия проверяется до установки: `typescript_version` с мажорной версией меньше 7 отклоняется исключением, которое называет причину и настройку. Нечисловые значения (`latest`, `next`) пропускаются. Версия за `ls_path` не проверяется: её Serena не знает.
 
 ### `src/solidlsp/ls_config.py`
 
