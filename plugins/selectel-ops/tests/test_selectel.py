@@ -131,6 +131,20 @@ class RequestTest(unittest.TestCase):
                 selectel.request("GET", "https://x")
         self.assertEqual(ctx.exception.status, 0)
 
+    def test_timeout_becomes_api_error_status_0(self):
+        with mock.patch("selectel.urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(selectel.ApiError) as ctx:
+                selectel.request("GET", "https://x")
+        self.assertEqual(ctx.exception.status, 0)
+
+    def test_non_json_2xx_becomes_api_error_with_html(self):
+        fake = _FakeResponse(200, {}, "<html><body>500</body></html>")
+        with mock.patch("selectel.urllib.request.urlopen", return_value=fake):
+            with self.assertRaises(selectel.ApiError) as ctx:
+                selectel.request("GET", "https://x")
+        self.assertEqual(ctx.exception.status, 200)
+        self.assertTrue(ctx.exception.is_html)
+
 
 CREDS = {
     "auth_url": "https://cloud.api.selcloud.ru/identity/v3",
@@ -276,6 +290,27 @@ class CliTest(unittest.TestCase):
             code = selectel.main(["projects"])
         self.assertEqual(code, 1)
         self.assertIn("nope", err.getvalue())
+
+    def test_json_after_subcommand(self):
+        code, out = self.run_main(["projects", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), [{"id": "p1", "name": "one", "enabled": True}])
+
+    def test_cloud_after_subcommand_is_accepted(self):
+        self.assertEqual(selectel.build_parser().parse_args(["check", "--cloud", "x"]).cloud, "x")
+
+    def test_token_project_flag_implies_project_scope(self):
+        code, out = self.run_main(["token", "--project", "zzz"])
+        self.assertEqual((code, out), (0, "ptok\n"))
+
+    def test_token_scope_domain_with_project_is_usage_error(self):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, ENV, clear=True), \
+             mock.patch("selectel.request", side_effect=_fake_request_ok), \
+             mock.patch("sys.stderr", err):
+            code = selectel.main(["token", "--scope", "domain", "--project", "zzz"])
+        self.assertEqual(code, 2)
+        self.assertIn("--project", err.getvalue())
 
 
 def _failing_at(url_suffix, status, body):

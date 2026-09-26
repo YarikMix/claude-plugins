@@ -8,6 +8,7 @@ SELECTEL_PROJECT_ID, SELECTEL_REGION, SELECTEL_AUTH_URL).
 """
 import argparse
 import getpass
+import http.client
 import json
 import os
 import ssl
@@ -70,11 +71,16 @@ def request(method, url, token=None, body=None):
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT, context=ssl_context()) as resp:
             raw = resp.read().decode("utf-8", "replace")
-            return resp.status, resp.headers, (json.loads(raw) if raw.strip() else {})
+            try:
+                return resp.status, resp.headers, (json.loads(raw) if raw.strip() else {})
+            except ValueError:
+                raise ApiError(resp.status, raw, url) from None
     except urllib.error.HTTPError as e:
         raise ApiError(e.code, e.read().decode("utf-8", "replace"), url) from None
-    except urllib.error.URLError as e:
-        raise ApiError(0, str(e.reason), url) from None
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+        # HTTPError субклассит URLError — ловим первым выше; TimeoutError — подкласс OSError;
+        # RemoteDisconnected/ConnectionResetError при чтении тела ловим через OSError.
+        raise ApiError(0, str(getattr(e, "reason", e)), url) from None
 
 
 def load_clouds_yaml(cloud, path=None):
@@ -212,23 +218,47 @@ def emit_rows(rows, columns, as_json):
 
 
 def build_parser():
+    # Глобальные опции нужны и до, и после подкоманды (`--json projects` и `projects --json`).
+    # parent объявляет их с default=SUPPRESS: атрибут появляется в Namespace, только если опцию
+    # реально передали после подкоманды, — иначе остаются дефолты основного парсера.
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument("--cloud", default=argparse.SUPPRESS, help="имя облака из clouds.yaml")
+    parent.add_argument(
+        "--clouds-file", default=argparse.SUPPRESS,
+        help="путь к clouds.yaml (по умолчанию ./, ~/.config/openstack, /etc/openstack)",
+    )
+    parent.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS,
+        help="машиночитаемый вывод (кроме token)",
+    )
+
     p = argparse.ArgumentParser(
         prog="selectel.py",
         description="Токен, проекты, каталог и диагностика доступа к Selectel (только чтение).",
     )
-    p.add_argument("--cloud", help="имя облака из clouds.yaml")
-    p.add_argument("--clouds-file", help="путь к clouds.yaml (по умолчанию ./, ~/.config/openstack, /etc/openstack)")
-    p.add_argument("--json", action="store_true", help="машиночитаемый вывод (кроме token)")
+    p.add_argument("--cloud", help="имя облака из clouds.yaml (можно и после подкоманды)")
+    p.add_argument(
+        "--clouds-file",
+        help="путь к clouds.yaml (по умолчанию ./, ~/.config/openstack, /etc/openstack; можно и после подкоманды)",
+    )
+    p.add_argument(
+        "--json", action="store_true",
+        help="машиночитаемый вывод, кроме token (можно и после подкоманды)",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
-    t = sub.add_parser("token", help="напечатать токен, только его")
-    t.add_argument("--scope", choices=("domain", "project"), default="domain")
+    t = sub.add_parser("token", help="напечатать токен, только его", parents=[parent])
+    t.add_argument(
+        "--scope", choices=("domain", "project"), default=None,
+        help="domain (по умолчанию) или project; --project без --scope тоже включает project, "
+             "а --scope domain вместе с --project — ошибка",
+    )
     t.add_argument("--project", help="id проекта для scope=project")
-    sub.add_parser("projects", help="проекты аккаунта (resell API)")
-    c = sub.add_parser("catalog", help="эндпоинты из каталога Keystone")
+    sub.add_parser("projects", help="проекты аккаунта (resell API)", parents=[parent])
+    c = sub.add_parser("catalog", help="эндпоинты из каталога Keystone", parents=[parent])
     c.add_argument("--type", dest="type_", help="тип сервиса: compute, network, image, volumev3, dnsv2 ...")
     c.add_argument("--region", help="регион, например ru-9")
     c.add_argument("--project", help="id проекта; без него — из кредов")
-    k = sub.add_parser("check", help="диагностика доступа и живости API")
+    k = sub.add_parser("check", help="диагностика доступа и живости API", parents=[parent])
     k.add_argument("--project", help="id проекта; без него — из кредов")
     k.add_argument("--region", help="регион для проверки compute; по умолчанию из кредов")
     return p
@@ -239,7 +269,10 @@ def main(argv=None):
     try:
         creds = load_credentials(args.cloud, args.clouds_file)
         if args.cmd == "token":
-            token, _ = issue_token(creds, args.scope, args.project)
+            if args.scope == "domain" and args.project:
+                raise UsageError("--project подразумевает --scope project")
+            scope = args.scope or ("project" if args.project else "domain")
+            token, _ = issue_token(creds, scope, args.project)
             print(token)
             return 0
         if args.cmd == "projects":
