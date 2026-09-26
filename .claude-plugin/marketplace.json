@@ -32,6 +32,17 @@
           }
         }
       }
+    },
+    {
+      "name": "selectel-ops",
+      "description": "Работа с облаком Selectel: доступ, проекты, флейворы, DNS, диагностика, стык с Pulumi и Ansible",
+      "version": "1.0.0",
+      "author": {
+        "name": "Yaroslav Mihalev"
+      },
+      "source": "./plugins/selectel-ops",
+      "category": "development",
+      "strict": false
     }
   ]
 }

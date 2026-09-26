@@ -15,3 +15,4 @@
 | Плагин | Что делает | Установка |
 |---|---|---|
 | [typescript-native-lsp](plugins/typescript-native-lsp/README.md) | языковой сервер TypeScript 7 через `tsc --lsp` | `/plugin install typescript-native-lsp@yarikmix-plugins` |
+| [selectel-ops](plugins/selectel-ops/README.md) | скилл для работы с облаком Selectel: доступ, API, DNS, стык с Pulumi и Ansible | `/plugin install selectel-ops@yarikmix-plugins` |
