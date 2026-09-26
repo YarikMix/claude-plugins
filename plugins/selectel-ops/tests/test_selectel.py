@@ -278,5 +278,96 @@ class CliTest(unittest.TestCase):
         self.assertIn("nope", err.getvalue())
 
 
+def _failing_at(url_suffix, status, body):
+    """request, который падает ApiError на URL с данным суффиксом, остальное — как _fake_request_ok."""
+    def fake(method, url, token=None, body=None):
+        if url.endswith(url_suffix):
+            raise selectel.ApiError(status, body_text, url)
+        return _fake_request_ok(method, url, token=token, body=body)
+    body_text = body
+    return fake
+
+
+AUTH_401 = json.dumps({"error": {"code": 401, "message": "The request you have made requires authentication."}})
+HTML_500 = "<html>\n<head><title>500 Internal Server Error</title></head>\n<body><center><h1>500 Internal Server Error</h1></center></body></html>"
+
+
+class CheckTest(unittest.TestCase):
+    def run_check(self, fake, creds=None, **kw):
+        lines = []
+        with mock.patch("selectel.request", side_effect=fake):
+            steps = selectel.run_check(creds or CREDS, emit=lines.append, **kw)
+        return steps, lines
+
+    def test_all_ok(self):
+        steps, lines = self.run_check(_fake_request_ok)
+        self.assertEqual([s["status"] for s in steps], ["OK", "OK", "OK", "OK"])
+        self.assertIn("member", steps[0]["detail"])
+        self.assertIn("1 шт.", steps[1]["detail"])
+        self.assertIn("есть", steps[2]["detail"])
+        self.assertIn("2", steps[3]["detail"])
+        self.assertEqual(lines[-1], "ИТОГ: OK")
+
+    def test_bad_password_stops_after_first_step(self):
+        def fake(method, url, token=None, body=None):
+            raise selectel.ApiError(401, AUTH_401, url)
+        steps, lines = self.run_check(fake)
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0]["status"], "FAIL")
+        self.assertIn("пароль", steps[0]["detail"])
+        self.assertEqual(lines[-1], "ИТОГ: FAIL")
+
+    def test_missing_project_is_explained(self):
+        def fake(method, url, token=None, body=None):
+            if url.endswith("/auth/tokens") and "project" in body["auth"]["scope"]:
+                raise selectel.ApiError(401, AUTH_401, url)
+            return _fake_request_ok(method, url, token=token, body=body)
+        steps, _ = self.run_check(fake, project_id="nope")
+        self.assertEqual(steps[2]["status"], "FAIL")
+        self.assertIn("проекта нет", steps[2]["detail"])
+        self.assertEqual(steps[3]["status"], "SKIP")
+
+    def test_dns_html_500_is_explained_as_outage(self):
+        steps, _ = self.run_check(_failing_at("/zones", 500, HTML_500))
+        self.assertEqual(steps[3]["status"], "FAIL")
+        self.assertIn("временный сбой", steps[3]["detail"])
+        self.assertIn("invalid character", steps[3]["detail"])
+
+    def test_resell_403_means_no_member_role(self):
+        steps, _ = self.run_check(_failing_at("/projects", 403, '{"error":{"message":"forbidden"}}'))
+        self.assertEqual(steps[1]["status"], "FAIL")
+        self.assertIn("member", steps[1]["detail"])
+
+    def test_skips_project_steps_without_project(self):
+        steps, _ = self.run_check(_fake_request_ok, creds=dict(CREDS, project_id=None))
+        self.assertEqual([s["status"] for s in steps], ["OK", "OK", "SKIP", "SKIP"])
+
+    def test_compute_missing_in_region_is_reported(self):
+        steps, _ = self.run_check(_fake_request_ok, region="kz-1")
+        self.assertEqual(steps[2]["status"], "OK")
+        self.assertIn("НЕТ", steps[2]["detail"])
+
+
+class CheckCliTest(unittest.TestCase):
+    def test_exit_0_and_json(self):
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, ENV, clear=True), \
+             mock.patch("selectel.request", side_effect=_fake_request_ok), \
+             mock.patch("sys.stdout", out):
+            code = selectel.main(["--json", "check"])
+        self.assertEqual(code, 0)
+        self.assertEqual([s["status"] for s in json.loads(out.getvalue())], ["OK", "OK", "OK", "OK"])
+
+    def test_exit_1_on_fail(self):
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, ENV, clear=True), \
+             mock.patch("selectel.request", side_effect=_failing_at("/zones", 500, HTML_500)), \
+             mock.patch("sys.stdout", out):
+            code = selectel.main(["check"])
+        self.assertEqual(code, 1)
+        self.assertIn("[FAIL] DNS v2", out.getvalue())
+        self.assertIn("ИТОГ: FAIL", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -264,9 +264,88 @@ def main(argv=None):
     return 2
 
 
+def explain(err, context):
+    """Объяснение ошибки API для человека с учётом шага, на котором она случилась."""
+    if err.status == 0:
+        return err.message()
+    if err.is_html and err.status >= 500:
+        return (
+            f"сервер вернул HTML с кодом {err.status}: временный сбой API Selectel, повторить позже "
+            "(у Pulumi это `invalid character '<' looking for beginning of value`)"
+        )
+    if context == "domain-token" and err.status == 401:
+        return "пароль, имя пользователя или номер аккаунта неверны"
+    if context == "project-token" and err.status == 401:
+        return "проекта нет или у пользователя нет роли на него; список: selectel.py projects"
+    if context == "resell" and err.status == 403:
+        return "нет роли member на аккаунт (панель → Управление доступом → Сервисные пользователи)"
+    if context == "dns" and err.status == 401:
+        return "DNS v2 принимает только project-scoped токен"
+    return err.message()
+
+
+def run_check(creds, project_id=None, region=None, emit=print):
+    """Пошаговая диагностика. Возвращает шаги {name, status, detail}; status: OK / FAIL / SKIP."""
+    region = region or creds.get("region") or DEFAULT_REGION
+    steps = []
+
+    def step(name, status, detail):
+        steps.append({"name": name, "status": status, "detail": detail})
+        emit(f"[{status}] {name}: {detail}")
+
+    def finish():
+        ok = all(s["status"] != "FAIL" for s in steps)
+        emit("ИТОГ: " + ("OK" if ok else "FAIL"))
+        return steps
+
+    try:
+        dtoken, dbody = issue_token(creds, "domain")
+        roles = sorted(r.get("name", "") for r in dbody.get("roles", []))
+        step("domain-токен", "OK", "роли: " + (", ".join(roles) or "нет"))
+    except ApiError as e:
+        step("domain-токен", "FAIL", explain(e, "domain-token"))
+        return finish()
+
+    try:
+        projects = list_projects(dtoken)
+        step("проекты аккаунта (resell)", "OK", f"{len(projects)} шт.")
+    except ApiError as e:
+        step("проекты аккаунта (resell)", "FAIL", explain(e, "resell"))
+
+    pid = project_id or creds.get("project_id")
+    ptoken = pbody = None
+    if not pid:
+        step("project-токен", "SKIP", "проект не задан (--project ID или project_id в clouds.yaml)")
+    else:
+        try:
+            ptoken, pbody = issue_token(creds, "project", pid)
+            compute = catalog_endpoints(pbody, "compute", region)
+            step(f"project-токен {pid}", "OK",
+                 f"compute в {region}: " + ("есть" if compute else "НЕТ, проверьте регион"))
+        except ApiError as e:
+            step(f"project-токен {pid}", "FAIL", explain(e, "project-token"))
+
+    if ptoken is None:
+        step("DNS v2", "SKIP", "нужен project-токен")
+    else:
+        dns = catalog_endpoints(pbody, "dnsv2", region) or catalog_endpoints(pbody, "dnsv2")
+        url = (dns[0]["url"] if dns else DNS_URL_FALLBACK).rstrip("/") + "/zones"
+        try:
+            _, _, data = request("GET", url, token=ptoken)
+            count = data.get("count", len(data.get("result", [])))
+            step("DNS v2", "OK", f"зон в проекте: {count}")
+        except ApiError as e:
+            step("DNS v2", "FAIL", explain(e, "dns"))
+
+    return finish()
+
+
 def run_check_cli(creds, args):
-    """Заглушка до Task 3."""
-    raise UsageError("check ещё не реализован")
+    quiet = (lambda line: None) if args.json else print
+    steps = run_check(creds, args.project, args.region, emit=quiet)
+    if args.json:
+        print(json.dumps(steps, ensure_ascii=False, indent=2))
+    return 0 if all(s["status"] != "FAIL" for s in steps) else 1
 
 
 if __name__ == "__main__":
