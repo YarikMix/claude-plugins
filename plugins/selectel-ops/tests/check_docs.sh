@@ -15,17 +15,16 @@ for s in "X-Subject-Token" "vpc/resell/v2/projects" "domains/v2/zones" "external
   need REFERENCE.md "$s"
 done
 
-if [ -f SKILL.md ]; then
-  need SKILL.md "name: selectel-ops"
-  need SKILL.md "description:"
-  for h in "## Чего ты никогда не делаешь" "## Модель доступа за минуту" "## Куда идти с какой задачей" \
-           "## Фаза 0" "## Процедуры" "## Только в панели" "## Selectel в Pulumi" "## Selectel в Ansible" \
-           "## Когда что-то не получается" "## Что отдавать наружу"; do
-    need SKILL.md "$h"
-  done
-  lines=$(wc -l < SKILL.md)
-  [ "$lines" -le 230 ] || { echo "SKILL.md длиннее 230 строк: $lines"; fail=1; }
-fi
+[ -f SKILL.md ] || { echo "нет SKILL.md"; fail=1; }
+need SKILL.md "name: selectel-ops"
+need SKILL.md "description:"
+for h in "## Чего ты никогда не делаешь" "## Модель доступа за минуту" "## Куда идти с какой задачей" \
+         "## Фаза 0" "## Процедуры" "## Только в панели" "## Selectel в Pulumi" "## Selectel в Ansible" \
+         "## Когда что-то не получается" "## Что отдавать наружу"; do
+  need SKILL.md "$h"
+done
+lines=$(wc -l < SKILL.md)
+[ "$lines" -le 230 ] || { echo "SKILL.md длиннее 230 строк: $lines"; fail=1; }
 
 # Утечки: IPv4, 32-hex id проектов, числа от 6 знаков (номера аккаунтов), fernet-токены.
 # Без \b: BSD grep на macOS его не понимает.
