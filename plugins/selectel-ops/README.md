@@ -15,7 +15,7 @@
   `SELECTEL_PASSWORD`.
 - По желанию `openstack` CLI (`pip install python-openstackclient`) — так удобнее смотреть флейворы,
   образы и типы дисков.
-- Сервисный пользователь Selectel с ролью `member` на аккаунт или на нужный проект.
+- Сервисный пользователь Selectel с ролью `member` на аккаунт.
 
 ## Установка
 
@@ -32,7 +32,8 @@ python3 ~/.claude/plugins/marketplaces/yarikmix-plugins/plugins/selectel-ops/ski
 
 После установки путь можно уточнить через `ls ~/.claude/plugins/marketplaces/`.
 
-Четыре строки `[OK]` — можно работать. Расшифровка `[FAIL]` — в `SKILL.md`, раздел
+Четыре `[OK]` (без `project_id` в `clouds.yaml` — два `[OK]` и два `[SKIP]`) и `ИТОГ: OK` —
+можно работать. Расшифровка `[FAIL]` — в `SKILL.md`, раздел
 «Когда что-то не получается».
 
 ## Чего скилл не делает
@@ -49,4 +50,4 @@ Requires Python 3.8+. Optional: `pyyaml` (to read `clouds.yaml`) and `python-ope
 /plugin install selectel-ops@yarikmix-plugins
 ```
 
-Then run `scripts/selectel.py --cloud <name> check` to verify access. The skill is read-only.
+Then run `python3 ~/.claude/plugins/marketplaces/yarikmix-plugins/plugins/selectel-ops/skills/selectel-ops/scripts/selectel.py --cloud <name> check` to verify access. The skill is read-only.

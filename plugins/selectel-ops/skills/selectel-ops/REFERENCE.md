@@ -38,7 +38,7 @@ curl -sS -i https://cloud.api.selcloud.ru/identity/v3/auth/tokens -H 'Content-Ty
 Все проекты аккаунта (domain-токен, не требует роли на конкретный проект):
 `GET https://api.selectel.ru/vpc/resell/v2/projects` с `X-Auth-Token: <TOKEN>`.
 
-Каталог эндпоинтов приходит в теле ответа на `/auth/tokens` (или на повторный `token issue`) —
+Каталог эндпоинтов приходит в теле ответа на `/auth/tokens` —
 `.token.catalog[]`, каждый элемент — `type`, `name`, `endpoints[].region` и `endpoints[].url`.
 
 `openstack --os-cloud <имя-облака> token issue -f value -c id` — токен без ручного `curl`;
@@ -54,7 +54,8 @@ curl -sS -i https://cloud.api.selcloud.ru/identity/v3/auth/tokens -H 'Content-Ty
   не нужен.
 - Токен со scope `domain` годится для IAM и resell API, в нём видны роли (`member`, `iam.admin`,
   `nobody`), работает `/auth/projects`. `403` на `identity:list_projects` и на
-  `identity:list_role_assignments` — норма, не нехватка прав.
+  `identity:list_role_assignments` — норма, не нехватка прав (при этом `openstack project list`
+  работает).
 - Nova, Neutron, Cinder, Glance и DNS v2 принимают только токен со scope `project`.
 - Запрос project-токена на несуществующий (в т. ч. удалённый) проект или без роли на него → **401**
   `The request you have made requires authentication`, а не 404. 401 на project-scope при верном
@@ -106,7 +107,7 @@ DNS v2 отвечает 401.
 Семейства флейворов:
 - `SL1.<vcpu>-<ram>[-<disk>]` — Standard Line, например `SL1.2-4096` (2 vCPU, 4096 МБ RAM,
   сетевой диск).
-- `PRC10.*`, `PRC20.*`, `PRC50.*` — shared vCPU разных уровней производительности.
+- `PRC10.*`, `PRC20.*`, `PRC50.*` — shared.
 - `CPU1.*`, `RAM1.*`, `m1.*`.
 - `HFL1.*` — локальный (не сетевой) диск.
 - `GL2.*` — GPU.
@@ -148,8 +149,8 @@ openstack --os-cloud <имя> project list
 | `500` HTML-страница nginx | `api.selectel.ru/domains/v2/*` | временный сбой DNS v2 API (наблюдался флап 15–20 минут) | подождать и повторить, не менять конфиг |
 | `invalid character '<' looking for beginning of value` | Pulumi, `getDomainsZoneV2`/`DomainsRrsetV2` | тот же флап DNS v2, Pulumi получил HTML вместо JSON | подождать и повторить `pulumi up`/`preview` |
 | `ExternalGatewayForFloatingIPNotFound` (404 Neutron) | привязка floating IP к порту | подсеть ещё не подключена к роутеру с внешним шлюзом | в Pulumi — `dependsOn: [routerInterface]` у `FloatingIpAssociate` |
-| `Flavor not found` / `No suitable flavor` | Nova, `getFlavorOutput`/`flavor list` | опечатка в имени флейвора или флейвор недоступен в проекте/регионе | сверить точное имя через `openstack flavor list --long` |
-| `could not find image` | Glance, поиск образа по имени | имя образа не совпадает посимвольно или образ непубличный | сверить точное имя через `openstack image list --public` |
+| `Flavor not found` | Nova, `getFlavorOutput`/`flavor list` | опечатка в имени флейвора или флейвор недоступен в проекте/регионе | сверить точное имя через `openstack flavor list --long` |
+| образ не найден по имени | Glance, поиск образа по имени | имя посимвольно из `image list --public`, `visibility: public` | сверить точное имя через `openstack image list --public` |
 | пустой `ansible-inventory --graph` | dynamic inventory `openstack.cloud.openstack` | не тот `project_id` в `clouds.yaml`, либо у серверов нет `metadata.role` | проверить `project_id` и `metadata` у серверов, задаваемые Pulumi |
 | `CERTIFICATE_VERIFY_FAILED ... self-signed certificate in certificate chain` | Python с python.org на macOS, любой `https` | не выполнен `Install Certificates.command` | выполнить команду или использовать Python со своим доверенным хранилищем сертификатов (например через `certifi`) |
 | смена порта ssh не действует | `sshd_config`, Ubuntu 22.10 и новее | `Port` игнорируется при socket-активации `ssh.socket` | отключить socket-активацию перед сменой порта |
@@ -167,11 +168,11 @@ runtime:
   name: nodejs
   options:
     typescript: true
-    packagemanager: bun          # иначе выбор по lock-файлу
+    packagemanager: <npm|pnpm|yarn|bun>   # любой, но явно
 packages:
   selectel:
     source: terraform-provider
-    parameters: [selectel/selectel, "8.3.1"]
+    parameters: [selectel/selectel, "<версия>"]
 ```
 
 `pulumi install` генерирует SDK в `sdks/selectel` и дописывает
@@ -298,6 +299,8 @@ openstacksdk>=1.0.0
 | `catalog [--type TYPE] [--region REGION] [--project ID]` | эндпоинты каталога из project-токена; без проекта пробует domain-токен и, если каталога в нём нет, просит указать проект | таблица `type region interface url` |
 | `check [--project ID] [--region REGION]` | диагностика доступа и живости API | пошагово `OK`/`FAIL` с расшифровкой; код выхода 1 при любом `FAIL` |
 
+Глобальные опции `--cloud`, `--clouds-file`, `--json` принимаются и до, и после подкоманды.
+
 Пример вывода `check` (успех, с явным корректным проектом):
 ```
 [OK] domain-токен: роли: <role1>, member, <role3>
@@ -341,4 +344,5 @@ dnsv2  ru-1    public     https://api.selectel.ru/domains/v2
 Общие правила: `--json` для машиночитаемого вывода у всех команд, кроме `token`; ответ,
 начинающийся с `<` (HTML), распознаётся отдельно от JSON-ошибок и показывается как «сервер вернул
 HTML, код N»; таймаут запроса — 20 с. Коды выхода: `0` — успех, `1` — проверка не прошла или API
-ответил ошибкой, `2` — ошибка использования или конфигурации.
+ответил ошибкой, `2` — ошибка использования или конфигурации. Глобальные опции `--cloud`,
+`--clouds-file`, `--json` принимаются и до, и после подкоманды.

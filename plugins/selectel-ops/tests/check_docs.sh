@@ -28,7 +28,7 @@ lines=$(wc -l < SKILL.md)
 
 # Утечки: IPv4, 32-hex id проектов, числа от 6 знаков (номера аккаунтов), fernet-токены.
 # Без \b: BSD grep на macOS его не понимает.
-leaks=$(grep -nE '([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{32}|(^|[^0-9.])[0-9]{6,}([^0-9.]|$)|gAAAA' SKILL.md REFERENCE.md scripts/selectel.py 2>/dev/null \
+leaks=$(grep -nE '([0-9]{1,3}\.){3}[0-9]{1,3}|[0-9a-f]{32}|(^|[^0-9.])[0-9]{6,}([^0-9.]|$)|gAAAA' SKILL.md REFERENCE.md scripts/selectel.py ../../README.md 2>/dev/null \
         | grep -vE '127\.0\.0\.1|0{32}|<ACCOUNT>|<PROJECT_ID>' || true)
 [ -z "$leaks" ] || { echo "похоже на идентификаторы стенда:"; echo "$leaks"; fail=1; }
 exit $fail

@@ -41,7 +41,7 @@ description: Работа с облаком Selectel через API, openstack C
 |---|---|
 | флейвор, образ, тип диска, внешняя сеть | `openstack --os-cloud <имя> ...` внутри любого проекта аккаунта (REFERENCE §4) |
 | список проектов и их id | `python3 scripts/selectel.py --cloud <имя> projects` |
-| токен для `curl` | `scripts/selectel.py token [--scope project]` или `openstack token issue -f value -c id` |
+| токен для `curl` | `python3 scripts/selectel.py token [--scope project]` или `openstack token issue -f value -c id` |
 | создать проект, проектного пользователя, keypair | IaC (Pulumi, REFERENCE §6) или панель |
 | DNS-запись | IaC или `curl` к DNS v2 (REFERENCE §3) |
 | первый сервисный пользователь аккаунта и его роли | только панель |
@@ -59,8 +59,9 @@ python3 scripts/selectel.py --cloud <имя> check
 Скилл установлен как плагин — если текущий каталог не каталог скилла, используй абсолютный путь
 `<каталог этого SKILL.md>/scripts/selectel.py`.
 
-Вывод — четыре строки `[OK]`/`[FAIL]`/`[SKIP]` по порядку: domain-токен → проекты аккаунта →
-project-токен (если проект задан) → DNS v2, и итог `OK`/`FAIL`. Без `[OK]` на domain-токене
+Вывод — до четырёх строк `[OK]`/`[FAIL]`/`[SKIP]` по порядку: domain-токен → проекты аккаунта →
+project-токен (если проект задан) → DNS v2, и итог `OK`/`FAIL`; без `project_id` шаги 3–4 будут
+`SKIP`, при `FAIL` на первом шаге вывод обрывается. Без `[OK]` на domain-токене
 дальше не двигаться — остальные шаги от него зависят. При `[FAIL]` на любом шаге — раздел «Когда
 что-то не получается» ниже по тексту сообщения.
 
@@ -160,7 +161,8 @@ openstack --os-cloud <имя> network list --external
 | `500` HTML от `api.selectel.ru/domains/v2` | временный сбой DNS v2 | подождать и повторить |
 | `invalid character '<'` в Pulumi | тот же сбой DNS v2, получен HTML вместо JSON | подождать, повторить `up`/`preview` |
 | `ExternalGatewayForFloatingIPNotFound` | подсеть не подключена к роутеру | `dependsOn: [routerInterface]` |
-| `Flavor not found` / `could not find image` | опечатка в имени | сверить через `flavor list --long` / `image list --public` |
+| `Flavor not found` | опечатка в имени | сверить через `flavor list --long` |
+| образ не найден по имени | имя посимвольно из `image list --public`, `visibility: public` | сверить через `image list --public` |
 | пустой `ansible-inventory --graph` | не тот `project_id` или нет `metadata.role` | сверить `clouds.yaml` и metadata сервера |
 | смена порта ssh не действует | `ssh.socket` игнорирует `Port` (Ubuntu ≥ 22.10) | отключить socket-активацию |
 
