@@ -176,5 +176,107 @@ class IssueTokenTest(unittest.TestCase):
             selectel.issue_token(creds, "project")
 
 
+CATALOG = [
+    {"type": "compute", "endpoints": [
+        {"interface": "public", "region": "ru-9", "url": "https://ru-9.cloud.api.selcloud.ru/compute/v2.1"},
+        {"interface": "public", "region": "ru-3", "url": "https://ru-3.cloud.api.selcloud.ru/compute/v2.1"},
+        {"interface": "admin", "region": "ru-9", "url": "https://admin-ru-9.example/compute"},
+    ]},
+    {"type": "dnsv2", "endpoints": [
+        {"interface": "public", "region": "ru-9", "url": "https://api.selectel.ru/domains/v2"},
+    ]},
+]
+
+
+class ProjectsAndCatalogTest(unittest.TestCase):
+    def test_list_projects_maps_fields(self):
+        payload = {"projects": [{"id": "p1", "name": "one", "enabled": True, "extra": 1}]}
+        with mock.patch("selectel.request", return_value=(200, {}, payload)) as req:
+            rows = selectel.list_projects("dtok")
+        self.assertEqual(rows, [{"id": "p1", "name": "one", "enabled": True}])
+        self.assertEqual(req.call_args.args[:2], ("GET", selectel.RESELL_URL + "/projects"))
+        self.assertEqual(req.call_args.kwargs["token"], "dtok")
+
+    def test_catalog_filters_type_region_interface(self):
+        rows = selectel.catalog_endpoints({"catalog": CATALOG}, "compute", "ru-9")
+        self.assertEqual(rows, [{"type": "compute", "region": "ru-9", "interface": "public",
+                                 "url": "https://ru-9.cloud.api.selcloud.ru/compute/v2.1"}])
+
+    def test_catalog_without_filters_returns_public_sorted(self):
+        rows = selectel.catalog_endpoints({"catalog": CATALOG})
+        self.assertEqual([(r["type"], r["region"]) for r in rows],
+                         [("compute", "ru-3"), ("compute", "ru-9"), ("dnsv2", "ru-9")])
+
+
+def _fake_request_ok(method, url, token=None, body=None):
+    """Успешный аккаунт: domain-токен с ролями, project-токен с каталогом, проекты, зоны."""
+    if url.endswith("/auth/tokens"):
+        if "domain" in body["auth"]["scope"]:
+            return 201, {"X-Subject-Token": "dtok"}, {"token": {"roles": [{"name": "member"}, {"name": "iam.admin"}]}}
+        return 201, {"X-Subject-Token": "ptok"}, {"token": {"catalog": CATALOG}}
+    if url.endswith("/projects"):
+        return 200, {}, {"projects": [{"id": "p1", "name": "one", "enabled": True}]}
+    if url.endswith("/zones"):
+        return 200, {}, {"count": 2, "result": [{}, {}]}
+    raise AssertionError("неожиданный URL " + url)
+
+
+class CliTest(unittest.TestCase):
+    def run_main(self, argv):
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, ENV, clear=True), \
+             mock.patch("selectel.request", side_effect=_fake_request_ok), \
+             mock.patch("sys.stdout", out):
+            code = selectel.main(argv)
+        return code, out.getvalue()
+
+    def test_token_prints_only_token(self):
+        code, out = self.run_main(["token"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "dtok\n")
+
+    def test_token_project_scope(self):
+        code, out = self.run_main(["token", "--scope", "project"])
+        self.assertEqual((code, out), (0, "ptok\n"))
+
+    def test_projects_json(self):
+        code, out = self.run_main(["--json", "projects"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), [{"id": "p1", "name": "one", "enabled": True}])
+
+    def test_projects_table_has_header(self):
+        code, out = self.run_main(["projects"])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("id"))
+        self.assertIn("one", out)
+
+    def test_catalog_filtered(self):
+        code, out = self.run_main(["--json", "catalog", "--type", "dnsv2"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)[0]["url"], "https://api.selectel.ru/domains/v2")
+
+    def test_catalog_without_project_and_catalog_returns_2(self):
+        env = dict(ENV)
+        del env["SELECTEL_PROJECT_ID"]
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch("selectel.request", side_effect=_fake_request_ok), \
+             mock.patch("sys.stderr", err):
+            code = selectel.main(["catalog"])
+        self.assertEqual(code, 2)
+        self.assertIn("проект", err.getvalue())
+
+    def test_api_error_returns_1(self):
+        def boom(method, url, token=None, body=None):
+            raise selectel.ApiError(401, '{"error":{"message":"nope"}}', url)
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, ENV, clear=True), \
+             mock.patch("selectel.request", side_effect=boom), \
+             mock.patch("sys.stderr", err):
+            code = selectel.main(["projects"])
+        self.assertEqual(code, 1)
+        self.assertIn("nope", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

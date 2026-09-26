@@ -166,3 +166,109 @@ def issue_token(creds, scope="domain", project_id=None):
     if not token:
         raise ApiError(0, "в ответе Keystone нет заголовка X-Subject-Token", creds["auth_url"])
     return token, data.get("token", {})
+
+
+def list_projects(token):
+    """Проекты аккаунта через resell API (нужен domain-scoped токен)."""
+    _, _, data = request("GET", RESELL_URL + "/projects", token=token)
+    return [
+        {"id": p.get("id"), "name": p.get("name"), "enabled": p.get("enabled")}
+        for p in data.get("projects", [])
+    ]
+
+
+def catalog_endpoints(token_body, type_=None, region=None, interface="public"):
+    """Эндпоинты из каталога Keystone в теле токена, с фильтрами по типу, региону, интерфейсу."""
+    out = []
+    for svc in token_body.get("catalog", []):
+        if type_ and svc.get("type") != type_:
+            continue
+        for ep in svc.get("endpoints", []):
+            if interface and ep.get("interface") != interface:
+                continue
+            if region and ep.get("region") != region:
+                continue
+            out.append({
+                "type": svc.get("type"),
+                "region": ep.get("region"),
+                "interface": ep.get("interface"),
+                "url": ep.get("url"),
+            })
+    return sorted(out, key=lambda e: (e["type"] or "", e["region"] or "", e["url"] or ""))
+
+
+def print_table(rows, columns):
+    widths = [max([len(c)] + [len(str(r.get(c, ""))) for r in rows]) for c in columns]
+    print("  ".join(c.ljust(w) for c, w in zip(columns, widths)))
+    for r in rows:
+        print("  ".join(str(r.get(c, "")).ljust(w) for c, w in zip(columns, widths)))
+
+
+def emit_rows(rows, columns, as_json):
+    if as_json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    else:
+        print_table(rows, columns)
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="selectel.py",
+        description="Токен, проекты, каталог и диагностика доступа к Selectel (только чтение).",
+    )
+    p.add_argument("--cloud", help="имя облака из clouds.yaml")
+    p.add_argument("--clouds-file", help="путь к clouds.yaml (по умолчанию ./, ~/.config/openstack, /etc/openstack)")
+    p.add_argument("--json", action="store_true", help="машиночитаемый вывод (кроме token)")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    t = sub.add_parser("token", help="напечатать токен, только его")
+    t.add_argument("--scope", choices=("domain", "project"), default="domain")
+    t.add_argument("--project", help="id проекта для scope=project")
+    sub.add_parser("projects", help="проекты аккаунта (resell API)")
+    c = sub.add_parser("catalog", help="эндпоинты из каталога Keystone")
+    c.add_argument("--type", dest="type_", help="тип сервиса: compute, network, image, volumev3, dnsv2 ...")
+    c.add_argument("--region", help="регион, например ru-9")
+    c.add_argument("--project", help="id проекта; без него — из кредов")
+    k = sub.add_parser("check", help="диагностика доступа и живости API")
+    k.add_argument("--project", help="id проекта; без него — из кредов")
+    k.add_argument("--region", help="регион для проверки compute; по умолчанию из кредов")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        creds = load_credentials(args.cloud, args.clouds_file)
+        if args.cmd == "token":
+            token, _ = issue_token(creds, args.scope, args.project)
+            print(token)
+            return 0
+        if args.cmd == "projects":
+            token, _ = issue_token(creds, "domain")
+            emit_rows(list_projects(token), ["id", "name", "enabled"], args.json)
+            return 0
+        if args.cmd == "catalog":
+            pid = args.project or creds.get("project_id")
+            _, body = issue_token(creds, "project", pid) if pid else issue_token(creds, "domain")
+            if not body.get("catalog"):
+                raise UsageError("в токене нет каталога: укажите проект (--project ID)")
+            emit_rows(catalog_endpoints(body, args.type_, args.region), ["type", "region", "interface", "url"], args.json)
+            return 0
+        if args.cmd == "check":
+            return run_check_cli(creds, args)
+    except UsageError as e:
+        print(f"ошибка: {e}", file=sys.stderr)
+        return 2
+    except ApiError as e:
+        print(f"ошибка API: {e.message()}", file=sys.stderr)
+        return 1
+    return 2
+
+
+def run_check_cli(creds, args):
+    """Заглушка до Task 3."""
+    raise UsageError("check ещё не реализован")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
