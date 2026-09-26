@@ -10,7 +10,7 @@
 | Identity (Keystone) | `https://cloud.api.selcloud.ru/identity/v3` | любой | выдаёт токены domain и project, каталог эндпоинтов лежит в теле ответа на `/auth/tokens` |
 | resell (проекты аккаунта) | `https://api.selectel.ru/vpc/resell/v2` | domain | список и создание проектов аккаунта, не требует существующего project-токена |
 | compute / network / image / volumev3 (Nova / Neutron / Glance / Cinder) | из каталога Keystone, по региону `ru-N`; хосты `<region>.cloud.api.selcloud.ru` для `ru`/`gis`, `*.servercore.com` для `kz`/`uz`/`ke` | project | флейворы, образы, сети, диски — только внутри существующего проекта |
-| dnsv2 (DNS v2) | `https://api.selectel.ru/domains/v2` (ru, gis); `https://api.servercore.com/domains/v2` (kz, uz, ke) | project | один эндпоинт на все ru-регионы, второй провайдер/регион не нужен |
+| dnsv2 (DNS v2) | `https://api.selectel.ru/domains/v2` (ru); `https://api.servercore.com/domains/v2` (kz, uz, ke) | project | один эндпоинт на все ru-регионы, второй провайдер/регион не нужен |
 
 Регион (пул) — вида `ru-9`, зона доступности внутри пула — вида `ru-9a`. Эндпоинт для каждого
 сервиса всегда брать из каталога Keystone по фактическому региону, не хардкодить URL.
@@ -107,11 +107,9 @@ DNS v2 отвечает 401.
 - `SL1.<vcpu>-<ram>[-<disk>]` — Standard Line, например `SL1.2-4096` (2 vCPU, 4096 МБ RAM,
   сетевой диск).
 - `PRC10.*`, `PRC20.*`, `PRC50.*` — shared vCPU разных уровней производительности.
-- `CPU1.*` — выделенный CPU.
-- `RAM1.*` — повышенная память.
+- `CPU1.*`, `RAM1.*`, `m1.*`.
 - `HFL1.*` — локальный (не сетевой) диск.
 - `GL2.*` — GPU.
-- `m1.*` — устаревшая линейка.
 
 `DISK GB = 0` в описании флейвора значит сетевой загрузочный диск — серверу с таким флейвором
 нужен отдельный ресурс Volume.
@@ -334,7 +332,6 @@ id                                name               enabled
 Пример вывода `catalog --type dnsv2` (первые строки):
 ```
 type   region  interface  url
-dnsv2  gis-1   public     https://api.selectel.ru/domains/v2
 dnsv2  ke-1    public     https://api.servercore.com/domains/v2
 dnsv2  kz-1    public     https://api.servercore.com/domains/v2
 dnsv2  ru-1    public     https://api.selectel.ru/domains/v2
