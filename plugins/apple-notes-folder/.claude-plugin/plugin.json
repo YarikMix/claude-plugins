@@ -1,0 +1,22 @@
+{
+  "name": "apple-notes-folder",
+  "version": "1.0.0",
+  "description": "MCP-сервер Apple Notes, ограниченный одной папкой: чтение, поиск, создание, правка, удаление, картинки",
+  "author": { "name": "Yaroslav Mihalev" },
+  "license": "MIT",
+  "userConfig": {
+    "folder": {
+      "type": "string",
+      "title": "Папка Заметок",
+      "description": "Имя единственной папки Apple Notes, с которой может работать агент",
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "apple-notes-folder": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.js"],
+      "env": { "NOTES_FOLDER": "${user_config.folder}" }
+    }
+  }
+}

@@ -43,6 +43,16 @@
       "source": "./plugins/selectel-ops",
       "category": "development",
       "strict": false
+    },
+    {
+      "name": "apple-notes-folder",
+      "description": "MCP-сервер Apple Notes, ограниченный одной папкой: чтение, поиск, создание, правка, удаление, картинки",
+      "version": "1.0.0",
+      "author": {
+        "name": "Yaroslav Mihalev"
+      },
+      "source": "./plugins/apple-notes-folder",
+      "category": "productivity"
     }
   ]
 }
