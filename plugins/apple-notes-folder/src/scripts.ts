@@ -107,6 +107,7 @@ function run(argv) {
   var b = n.body();
   var k = attachmentCount(n);
   if (k > 0 || /<img\\b/i.test(b) || b.indexOf('\\uFFFC') !== -1) fail('ATTACHMENTS:' + Math.max(k, 1));
+  if (/<(ul|ol)\\b/i.test(b)) fail('LISTS');
   n.body = b + readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;
@@ -119,6 +120,7 @@ function run(argv) {
   var b = n.body();
   var k = attachmentCount(n);
   if (k > 0 || /<img\\b/i.test(b) || b.indexOf('\\uFFFC') !== -1) fail('ATTACHMENTS:' + Math.max(k, 1));
+  if (/<(ul|ol)\\b/i.test(b)) fail('LISTS');
   n.body = readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;

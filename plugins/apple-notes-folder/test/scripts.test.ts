@@ -64,6 +64,32 @@ describe('SCRIPTS', () => {
     expect(test(0, '<div>imgur</div>')).toBe(false);
   });
 
+  it('дописывание и замена отказывают заметке со списками до записи текста', () => {
+    for (const s of [SCRIPTS.appendNote, SCRIPTS.updateNote]) {
+      const run = s.slice(s.indexOf('function run('));
+      const attachFailAt = run.indexOf("fail('ATTACHMENTS:' + Math.max(k, 1))");
+      const listsCheckAt = run.indexOf('if (/<(ul|ol)');
+      const listsFailAt = run.indexOf("fail('LISTS')");
+      const writeAt = run.indexOf('n.body =');
+      expect(attachFailAt).toBeGreaterThan(-1);
+      expect(listsCheckAt).toBeGreaterThan(attachFailAt);
+      expect(listsFailAt).toBeGreaterThan(listsCheckAt);
+      expect(writeAt).toBeGreaterThan(listsFailAt);
+    }
+  });
+
+  it('проверка списков реально срабатывает на <ul>/<ol>, но не на <u>', () => {
+    const src = SCRIPTS.appendNote;
+    const cond = src.slice(src.indexOf('if (/<(ul|ol)'), src.indexOf(") fail('LISTS')"));
+    const test = new Function('b', `return ${cond.slice(cond.indexOf('(') + 1)};`) as (b: string) => boolean;
+    expect(test('<div>текст</div>')).toBe(false);
+    expect(test('<ul><li>раз</li></ul>')).toBe(true);
+    expect(test('<UL class="x"><li>раз</li></UL>')).toBe(true);
+    expect(test('<ol><li>раз</li></ol>')).toBe(true);
+    expect(test('<div>ultra</div>')).toBe(false);
+    expect(test('<u>подчёркнуто</u>')).toBe(false);
+  });
+
   it('число вложений считается по id без повторов', () => {
     expect(SCRIPTS.readNote).toMatch(/function attachmentCount\(n\) \{[^}]*n\.attachments\.id\(\)/);
   });

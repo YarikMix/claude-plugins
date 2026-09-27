@@ -36,6 +36,9 @@ function fakeNotes(notes: Record<string, FakeNote>) {
     const k = n.attachments ?? 0;
     if (k > 0) throw new ToolError('ATTACHMENTS', attachmentsMessage(k));
   };
+  const noLists = (n: FakeNote) => {
+    if (/<(ul|ol)\b/i.test(n.body)) throw new ToolError('LISTS', MESSAGES.LISTS);
+  };
   const summaries = (entries: [string, FakeNote][]) =>
     JSON.stringify(entries.map(([id, n]) => ({ id, name: n.name, modified: n.modified })));
 
@@ -64,12 +67,14 @@ function fakeNotes(notes: Record<string, FakeNote>) {
       case SCRIPTS.appendNote: {
         const n = guard(fid, a1);
         noAttachments(n);
+        noLists(n);
         n.body += await readFile(a2, 'utf8');
         return JSON.stringify({ id: a1 });
       }
       case SCRIPTS.updateNote: {
         const n = guard(fid, a1);
         noAttachments(n);
+        noLists(n);
         n.body = await readFile(a2, 'utf8');
         return JSON.stringify({ id: a1 });
       }
@@ -120,7 +125,10 @@ describe('набор инструментов', () => {
       'notes_delete',
     ]);
     const d = Object.fromEntries(setup().tools.map((t) => [t.name, t.description]));
-    for (const name of ['notes_append', 'notes_update']) expect(d[name]).toContain('вложения');
+    for (const name of ['notes_append', 'notes_update']) {
+      expect(d[name]).toContain('вложения');
+      expect(d[name]).toContain('списк');
+    }
     for (const name of ['notes_create', 'notes_append', 'notes_update']) expect(d[name]).toContain('/private/tmp/claude-<uid>/');
     expect(d.notes_read).toContain('Вложений в заметке');
   });
@@ -261,6 +269,42 @@ describe('запись', () => {
       expect((err as Error).message).toContain('(2)');
     }
     expect(notes.P1.body).toBe(before);
+  });
+
+  it('notes_append и notes_update у заметки со списками — отказ, текст не меняется; заметку без списков правит', async () => {
+    const fake = fakeNotes({
+      LST: {
+        name: 'Со списком',
+        body: '<div><h1>Со списком</h1></div><ul><li>раз</li><li>два</li></ul>',
+        folder: 'F1',
+        modified: '2026-09-06T00:00:00.000Z',
+      },
+      PLAIN: {
+        name: 'Без списка',
+        body: '<div><h1>Без списка</h1></div><div>текст</div>',
+        folder: 'F1',
+        modified: '2026-09-07T00:00:00.000Z',
+      },
+    });
+    const tools = makeTools({
+      getScope: async () => ({ folderId: 'F1', folderName: 'Разрешённая' }),
+      run: fake.run,
+      imageSrc: async () => 'file:///private/tmp/claude-1/real.png',
+    });
+    const tool = (name: string) => tools.find((t) => t.name === name)!.handler;
+
+    const before = fake.notes.LST.body;
+    for (const name of ['notes_append', 'notes_update']) {
+      const err = await tool(name)({ id: 'LST', markdown: 'новое' }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err).toMatchObject({ code: 'LISTS', message: MESSAGES.LISTS });
+    }
+    expect(fake.notes.LST.body).toBe(before);
+
+    await tool('notes_append')({ id: 'PLAIN', markdown: 'ещё' });
+    expect(fake.notes.PLAIN.body).toContain('ещё');
   });
 
   it('notes_append и notes_update без вложений — картинка из пути уходит в тело как file://', async () => {

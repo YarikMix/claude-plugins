@@ -21,6 +21,8 @@ export function mapOsaFailure(err: { killed?: boolean; signal?: string | null },
   switch (code) {
     case 'ATTACHMENTS':
       return new ToolError('ATTACHMENTS', attachmentsMessage(Number(apn?.[2] ?? 0)));
+    case 'LISTS':
+      return new ToolError('LISTS', MESSAGES.LISTS);
     case 'OUTSIDE':
       return new ToolError('OUTSIDE', MESSAGES.OUTSIDE);
     case 'NOT_FOUND':
