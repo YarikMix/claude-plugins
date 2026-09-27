@@ -44,9 +44,8 @@ export function htmlToMarkdown(html: string): { markdown: string; images: string
   const { html: stripped, images } = extractImages(html);
   let markdown = makeTurndown().turndown(stripped).trim();
   if (markdown.length > MAX_MARKDOWN_CHARS) {
-    markdown =
-      markdown.slice(0, MAX_MARKDOWN_CHARS) +
-      `\n\n[… обрезано: заметка длиннее ${MAX_MARKDOWN_CHARS} символов]`;
+    const marker = `\n\n[… обрезано: заметка длиннее ${MAX_MARKDOWN_CHARS} символов]`;
+    markdown = markdown.slice(0, MAX_MARKDOWN_CHARS - marker.length) + marker;
   }
   return { markdown, images };
 }

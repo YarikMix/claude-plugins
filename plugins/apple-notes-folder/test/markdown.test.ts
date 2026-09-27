@@ -49,7 +49,7 @@ describe('htmlToMarkdown', () => {
     const { markdown } = htmlToMarkdown(`<div>${'а'.repeat(MAX_MARKDOWN_CHARS + 50)}</div>`);
     expect(markdown.startsWith('а'.repeat(100))).toBe(true);
     expect(markdown).toMatch(/обрезано: заметка длиннее 200000 символов\]$/);
-    expect(markdown.length).toBeLessThan(MAX_MARKDOWN_CHARS + 100);
+    expect(markdown.length).toBeLessThanOrEqual(MAX_MARKDOWN_CHARS);
   });
 });
 
