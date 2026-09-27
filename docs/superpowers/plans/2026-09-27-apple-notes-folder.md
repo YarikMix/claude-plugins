@@ -14,7 +14,7 @@
 
 - Все команды — из каталога `plugins/apple-notes-folder/` рабочего дерева `/Users/y.mihalev/projects/tp-prepare/claude-plugins-apple-notes-folder`, если не сказано иное. Ветка `apple-notes-folder`.
 - Имя плагина `apple-notes-folder`; ключ `userConfig` — `folder`; переменная окружения сервера — `NOTES_FOLDER`.
-- Имена инструментов ровно: `notes_list`, `notes_search`, `notes_read`, `notes_create`, `notes_append`, `notes_update`, `notes_delete`.
+- Имена инструментов ровно: `notes_list`, `notes_search`, `notes_read`, `notes_create`, `notes_append`, `notes_update`, `notes_delete` (Task 1–8); с Task 9b добавляется восьмой — `notes_attach_image` (между `notes_update` и `notes_delete`).
 - Runtime-зависимости только `@modelcontextprotocol/sdk`, `zod` (мажор 3), `marked`, `turndown`; версии точные (`--save-exact`). Dev: `typescript`, `esbuild`, `vitest`, `@types/node`, `@types/turndown`.
 - Реестр npm только `https://registry.npmjs.org/` (файл `.npmrc` плагина). В `package-lock.json` не должно быть ни одного `resolved`, кроме `https://registry.npmjs.org/…`. Системный реестр npm на машине разработчика — корпоративный (`npm config get registry` в корне репозитория): его адрес в репозиторий попасть не должен.
 - Сервер не делает сетевых запросов и ничего не скачивает во время работы.
@@ -2422,6 +2422,70 @@ Expected: `Проверок: 26, не прошло: 0`, строка «Боль�
 git add scripts/live-check.mjs package.json README.md
 git add -u src test dist   # если в Step 3 правились исходники
 git commit -m "test(apple-notes-folder): живая проверка на Заметках и её итоги"
+```
+
+
+---
+
+### Task 9b: Вложения, поиск и имя папки по итогам живой проверки
+
+Добавлена после Task 9 по решению пользователя (27.09.2026). Спека обновлена: разделы «Инструменты» → «Вложения», «Граница папки» (поиск), «Поиск папки». Живая проверка показала: картинка в `body` становится вложением и из `body()` пропадает; любая запись `body` удаляет **все** вложения заметки; `whose` в поиске тратит ~150 мс на совпадение и на ~1200 заметках не укладывается в 30 с; папка по умолчанию в скриптах называется «Notes», а не «Заметки».
+
+**Files:**
+- Modify: `src/scripts.ts`, `src/runner.ts`, `src/errors.ts`, `src/images.ts`, `src/notes.ts`, `src/tools.ts`, `src/scope.ts`, `src/server.ts`, `scripts/live-check.mjs`, `README.md` (плагина), `dist/*` (сборкой)
+- Test: `test/scripts.test.ts`, `test/runner.test.ts`, `test/images.test.ts`, `test/tools.test.ts`, `test/scope.test.ts`, `test/server.smoke.test.ts`
+
+**Interfaces (новое и изменённое):**
+- `errors.ts`: `ErrorCode` + `'ATTACHMENTS'`; `function attachmentsMessage(n: number): string` → «У заметки есть вложения (N). Заметки удаляют вложения при любом изменении текста, поэтому сервер текст этой заметки не меняет. Картинку в неё можно добавить через notes_attach_image.»
+- `scripts.ts`: `SCRIPTS.attachImage` — argv `[folderId, noteId, imagePath]` → JSON `{ id, attachments }`; `ID_SCRIPTS` — пять скриптов (плюс `attachImage`). `appendNote`/`updateNote` сразу после `guardNote` делают `var k = n.attachments.length; if (k > 0) fail('ATTACHMENTS:' + k);` — до любой записи `n.body`. `readNote` добавляет в JSON `attachments: n.attachments.length`. `searchNotes` без `whose`: пакетно `f.notes.id()`, `.name()`, `.plaintext()`, `.modificationDate()`, фильтр `(name + '\n' + (text || '')).toLowerCase().indexOf(argv[1].toLowerCase()) !== -1`.
+- `runner.ts`: `APN:ATTACHMENTS:<N>` → `ToolError('ATTACHMENTS', attachmentsMessage(N))`; остальные коды без изменений.
+- `images.ts`: `function validateImagePath(path: string, root?: string): Promise<{ real: string; mime: string }>` — все прежние проверки (абсолютный путь, не ссылка, обычный файл, внутри корня после `realpath`, ≤ 10 МБ, формат по первым байтам — читать только начало файла); `loadImage` вызывает её и читает файл целиком.
+- `notes.ts`: `NoteFull` + `attachments: number`; `NotesService.attachImage(id: string, realPath: string): Promise<number>` (число вложений после добавления; `write: true`).
+- `markdown.ts`: без изменений API, но `htmlToMarkdown(html, maxChars = MAX_MARKDOWN_CHARS)` — необязательный лимит (обрезка с пометкой укладывается в `maxChars`).
+- `tools.ts`: `ToolDeps` + `validateImage: (path: string) => Promise<{ real: string; mime: string }>`; инструмент `notes_attach_image` `{ id, path }` → JSON `{ id, attachments }`, путь проверяется **до** любого вызова скрипта; `notes_read` при `attachments > 0` дописывает `\n\n[Вложений в заметке: N — их содержимое сервер не показывает]`, а `htmlToMarkdown` зовётся с `MAX_MARKDOWN_CHARS - <длина этой строки>` — итог ≤ 200 000. Описания: `notes_create` — картинки становятся вложениями заметки; `notes_append`/`notes_update` — у заметки с вложениями отказ и почему; `notes_attach_image` — правило пути (как у картинок).
+- `scope.ts`: сообщение «не найдена» дополняется: «Папка по умолчанию в скриптах может называться иначе, чем в интерфейсе: в русском интерфейсе «Заметки», в скриптах «Notes».»
+- `server.ts`: `validateImage: (p) => validateImagePath(p)`.
+
+- [ ] **Step 1: Проверка `make new attachment` на живых Заметках (до кода)**
+
+Пробой `osascript -l JavaScript` на временной папке `anf-probe-attach-<суффикс>` (создать и удалить в той же пробе; учесть возврат удалённых папок синхронизацией — см. уборку в `scripts/live-check.mjs`): заметка с текстом → добавить вложение из PNG в `/private/tmp/claude-<uid>/…` (варианты: `app.make({ new: 'attachment', at: n, withData: Path(p) })`; AppleScript `make new attachment at note id … with data (POSIX file p)`) → `attachments.length` 1, `body()` не изменился; добавить второе → 2, первое на месте. Записать работающую форму. Если ни одна не работает — остановиться, BLOCKED, ничего не коммитить.
+
+- [ ] **Step 2: Тесты (сначала падают)**
+
+- `scripts.test.ts`: `ID_SCRIPTS` — 5; в `appendNote`/`updateNote` проверка `attachments.length` стоит после `GUARD_CALL` и до первого `n.body =`; в теле `run` у `searchNotes` нет `whose`, есть `folderById(argv[0])` и `toLowerCase`; `attachImage` — `GUARD_CALL` первым.
+- `runner.test.ts`: `Error: APN:ATTACHMENTS:3` → код `ATTACHMENTS`, сообщение содержит «(3)».
+- `images.test.ts`: `validateImagePath` возвращает `real` (равен `realpath` файла) и `mime` для PNG; отказ для файла вне корня и для символической ссылки; прежние тесты `loadImage` проходят без изменений.
+- `tools.test.ts` (подставной исполнитель поддерживает `attachments` у заметок и `attachImage`): восемь имён в порядке `notes_list, notes_search, notes_read, notes_create, notes_append, notes_update, notes_attach_image, notes_delete`; `notes_append` и `notes_update` у заметки с вложениями → `ATTACHMENTS`, тело не изменилось; `notes_attach_image` у своей заметки → `{ id, attachments: 1 }`, у чужой → `OUTSIDE` без названия; при отказе `validateImage` скрипт не вызывается; `notes_read` у заметки с 2 вложениями заканчивается строкой «[Вложений в заметке: 2 — их содержимое сервер не показывает]», без вложений — строки нет.
+- `scope.test.ts`: сообщение «не найдена» содержит «Notes».
+- `server.smoke.test.ts`: восемь имён.
+
+- [ ] **Step 3: Реализация** — по Interfaces выше, с формой добавления вложения из Step 1. Правила Global Constraints не меняются: скрипты постоянные, `folderId` — `argv[0]`, `guardNote` до любого доступа к заметке по id, данные только в argv и временном файле.
+
+- [ ] **Step 4:** `npm test && npm run typecheck && npm run verify-build` и grep сетевых модулей из Task 7 — всё зелёное.
+
+- [ ] **Step 5: Живая проверка заново**
+
+В `scripts/live-check.mjs` заменить проверки картинок:
+- заметка A: `notes_create` с картинкой → `notes_read(A)` содержит «[Вложений в заметке: 1»; `notes_append(A)` и `notes_update(A)` → ошибка с «вложения», после них `notes_read(A)` по-прежнему «Вложений в заметке: 1»;
+- заметка B без картинок: прежние проверки `append`/`update`/поиска идут на B; затем `notes_attach_image(B, png)` → `attachments: 1`, текст B не изменился; второй раз → `attachments: 2`;
+- убрать проверки `note-image:*` и «убранная заглушка удалила картинку»;
+- в попытки на чужой и вложенной папках добавить `notes_attach_image` (ожидание — отказ «вне разрешённой папки», чужая заметка на месте, у неё не появилось вложений);
+- замер на большой папке: `notes_search` по «а» — без ошибки, время печатается; проверка «поиск по широкому запросу уложился в 30 с»;
+- проверка запроса с ведущим «-» остаётся.
+
+Запуск: `npm run build && LIVE_BIG_FOLDER='Notes' npm run live-check`. Ожидание — «не прошло: 0»; сырое число проверок напечатать. Проверить, что папок `anf-*` не осталось. Условия остановки — как в Task 9 (любое нарушение границы папки — BLOCKED, ничего не коммитить).
+
+- [ ] **Step 6: README**
+
+- Таблица инструментов — восемь строк; раздел «Картинки»: в новую заметку — `![](путь)` в `notes_create` (станет вложением), в существующую — `notes_attach_image`; текст заметки с вложениями сервер не меняет и почему.
+- Раздел «Установка»: папку по умолчанию указывать как «Notes» (в интерфейсе — «Заметки»).
+- Заменить комментарий `<!-- Итоги живой проверки … -->` разделом «Итоги живой проверки» с фактическими значениями: дата, версия macOS, число проверок, «картинки становятся вложениями; изменение текста удаляет вложения — поэтому отказ», поиск без учёта регистра, «ё» и «е» различаются, время `notes_list` и `notes_search` («а») на папке примерно из 1200 заметок. Имени большой папки в README нет (кроме общей фразы про «Notes»).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src test scripts/live-check.mjs dist README.md
+git commit -m "feat(apple-notes-folder): защита вложений, notes_attach_image и быстрый поиск по итогам живой проверки"
 ```
 
 ---
