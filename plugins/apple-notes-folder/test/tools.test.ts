@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { makeTools } from '../src/tools.js';
 import { SCRIPTS } from '../src/scripts.js';
-import { MESSAGES, ToolError } from '../src/errors.js';
-import { titleHtml } from '../src/markdown.js';
+import { MESSAGES, ToolError, attachmentsMessage } from '../src/errors.js';
+import { titleHtml, MAX_MARKDOWN_CHARS } from '../src/markdown.js';
 import type { Runner } from '../src/runner.js';
 
 interface FakeNote {
@@ -12,6 +12,7 @@ interface FakeNote {
   folder: string;
   modified: string;
   locked?: boolean;
+  attachments?: number;
 }
 
 const WITH_IMAGES =
@@ -31,6 +32,10 @@ function fakeNotes(notes: Record<string, FakeNote>) {
     if (n.locked) throw new ToolError('LOCKED', MESSAGES.LOCKED);
     return n;
   };
+  const noAttachments = (n: FakeNote) => {
+    const k = n.attachments ?? 0;
+    if (k > 0) throw new ToolError('ATTACHMENTS', attachmentsMessage(k));
+  };
   const summaries = (entries: [string, FakeNote][]) =>
     JSON.stringify(entries.map(([id, n]) => ({ id, name: n.name, modified: n.modified })));
 
@@ -49,7 +54,7 @@ function fakeNotes(notes: Record<string, FakeNote>) {
       }
       case SCRIPTS.readNote: {
         const n = guard(fid, a1);
-        return JSON.stringify({ id: a1, name: n.name, modified: n.modified, body: n.body });
+        return JSON.stringify({ id: a1, name: n.name, modified: n.modified, body: n.body, attachments: n.attachments ?? 0 });
       }
       case SCRIPTS.createNote: {
         const id = `NEW${++seq}`;
@@ -58,11 +63,13 @@ function fakeNotes(notes: Record<string, FakeNote>) {
       }
       case SCRIPTS.appendNote: {
         const n = guard(fid, a1);
+        noAttachments(n);
         n.body += await readFile(a2, 'utf8');
         return JSON.stringify({ id: a1 });
       }
       case SCRIPTS.updateNote: {
         const n = guard(fid, a1);
+        noAttachments(n);
         n.body = await readFile(a2, 'utf8');
         return JSON.stringify({ id: a1 });
       }
@@ -81,16 +88,16 @@ function setup() {
     N1: { name: 'Первая', body: '<div><h1>Первая</h1></div><div>про кота</div>', folder: 'F1', modified: '2026-09-01T00:00:00.000Z' },
     N2: { name: 'Вторая', body: '<div><h1>Вторая</h1></div><div>про собаку</div>', folder: 'F1', modified: '2026-09-02T00:00:00.000Z' },
     L1: { name: 'Под паролем', body: '<div>закрыто</div>', folder: 'F1', modified: '2026-09-04T00:00:00.000Z', locked: true },
-    P1: { name: 'С картинками', body: WITH_IMAGES, folder: 'F1', modified: '2026-09-05T00:00:00.000Z' },
+    P1: { name: 'С картинками', body: WITH_IMAGES, folder: 'F1', modified: '2026-09-05T00:00:00.000Z', attachments: 2 },
     X1: { name: 'Секретная', body: '<div><h1>Секретная</h1></div><div>про кота тоже</div>', folder: 'F2', modified: '2026-09-03T00:00:00.000Z' },
   });
   const loaded: string[] = [];
   const tools = makeTools({
     getScope: async () => ({ folderId: 'F1', folderName: 'Разрешённая' }),
     run: fake.run,
-    loadImage: async (p) => {
+    imageSrc: async (p) => {
       loaded.push(p);
-      return 'data:image/png;base64,NEW';
+      return 'file:///private/tmp/claude-1/real.png';
     },
   });
   const tool = (name: string) => {
@@ -112,6 +119,10 @@ describe('набор инструментов', () => {
       'notes_update',
       'notes_delete',
     ]);
+    const d = Object.fromEntries(setup().tools.map((t) => [t.name, t.description]));
+    for (const name of ['notes_append', 'notes_update']) expect(d[name]).toContain('вложения');
+    for (const name of ['notes_create', 'notes_append', 'notes_update']) expect(d[name]).toContain('/private/tmp/claude-<uid>/');
+    expect(d.notes_read).toContain('Вложений в заметке');
   });
 
   it('чтение помечено readOnly, удаление и замена — destructive', () => {
@@ -142,6 +153,22 @@ describe('чтение', () => {
     const md = await setup().tool('notes_read')({ id: 'N1' });
     expect(md).toMatch(/^# Первая/);
     expect(md).toContain('про кота');
+  });
+
+  it('notes_read: число вложений в конце ответа, без вложений — строки нет', async () => {
+    const { tool } = setup();
+    const withAtt = await tool('notes_read')({ id: 'P1' });
+    expect(withAtt.endsWith('\n\n[Вложений в заметке: 2 — их содержимое сервер не показывает]')).toBe(true);
+    expect(await tool('notes_read')({ id: 'N1' })).not.toContain('Вложений в заметке');
+  });
+
+  it('notes_read: длинная заметка с вложениями укладывается в лимит', async () => {
+    const { tool, notes } = setup();
+    notes.P1.body = `<div>${'а'.repeat(MAX_MARKDOWN_CHARS + 100)}</div>`;
+    const md = await tool('notes_read')({ id: 'P1' });
+    expect(md.length).toBeLessThanOrEqual(MAX_MARKDOWN_CHARS);
+    expect(md).toContain('обрезано');
+    expect(md.endsWith('[Вложений в заметке: 2 — их содержимое сервер не показывает]')).toBe(true);
   });
 
   it('под паролем и несуществующая — разные ошибки', async () => {
@@ -189,7 +216,7 @@ describe('граница папки', () => {
         throw new ToolError('CONFIG', 'Не задана папка Заметок.');
       },
       run: fake.run,
-      loadImage: async () => 'data:x',
+      imageSrc: async () => 'file:///x',
     });
     await expect(tools[0].handler({ limit: 50, offset: 0 })).rejects.toMatchObject({ code: 'CONFIG' });
     expect(fake.calls.length).toBe(0);
@@ -204,7 +231,7 @@ describe('запись', () => {
     );
     expect(notes[id].folder).toBe('F1');
     expect(notes[id].body.startsWith(titleHtml('Новая'))).toBe(true);
-    expect(notes[id].body).toContain('<img src="data:image/png;base64,NEW">');
+    expect(notes[id].body).toContain('<img src="file:///private/tmp/claude-1/real.png">');
     expect(loaded).toEqual(['/private/tmp/claude-1/a.png']);
     expect(calls.at(-1)?.write).toBe(true);
   });
@@ -225,12 +252,34 @@ describe('запись', () => {
     expect(notes.N1.body).toContain('<li>ещё</li>');
   });
 
-  it('notes_update: оставленная заглушка сохраняет картинку, убранная — удаляет', async () => {
+  it('notes_append и notes_update у заметки с вложениями — отказ, текст не меняется', async () => {
     const { tool, notes } = setup();
-    const md = await tool('notes_read')({ id: 'P1' });
-    await tool('notes_update')({ id: 'P1', markdown: md.replace('![картинка 1](note-image:1)', '') });
-    expect(notes.P1.body).toContain('data:image/png;base64,BBBB');
-    expect(notes.P1.body).not.toContain('AAAA');
+    const before = notes.P1.body;
+    for (const name of ['notes_append', 'notes_update']) {
+      const err = await tool(name)({ id: 'P1', markdown: 'новое' }).then(() => null, (e: unknown) => e);
+      expect(err).toMatchObject({ code: 'ATTACHMENTS' });
+      expect((err as Error).message).toContain('(2)');
+    }
+    expect(notes.P1.body).toBe(before);
+  });
+
+  it('notes_append и notes_update без вложений — картинка из пути уходит в тело как file://', async () => {
+    const { tool, notes, loaded } = setup();
+    await tool('notes_append')({ id: 'N1', markdown: '![](/private/tmp/claude-1/a.png)' });
+    expect(notes.N1.body).toContain('<img src="file:///private/tmp/claude-1/real.png">');
+    await tool('notes_update')({ id: 'N2', markdown: '# Вторая\n\n![](/private/tmp/claude-1/b.png)' });
+    expect(notes.N2.body).toContain('<img src="file:///private/tmp/claude-1/real.png">');
+    expect(loaded).toEqual(['/private/tmp/claude-1/a.png', '/private/tmp/claude-1/b.png']);
+  });
+
+  it('notes_update: заглушка note-image во входе — ошибка до записи', async () => {
+    const { tool, calls, notes } = setup();
+    const before = notes.N1.body;
+    await expect(tool('notes_update')({ id: 'N1', markdown: '![](note-image:1)' })).rejects.toMatchObject({
+      code: 'IMAGE_REF',
+    });
+    expect(calls.filter((c) => c.script === SCRIPTS.updateNote)).toHaveLength(0);
+    expect(notes.N1.body).toBe(before);
   });
 
   it('notes_update: неверная заглушка — ошибка до записи', async () => {

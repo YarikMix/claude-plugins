@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { MESSAGES, ToolError } from './errors.js';
+import { MESSAGES, ToolError, attachmentsMessage } from './errors.js';
 
 export interface RunOptions {
   write: boolean;
@@ -16,8 +16,11 @@ export function mapOsaFailure(err: { killed?: boolean; signal?: string | null },
   const timeout = () => new ToolError(write ? 'TIMEOUT_WRITE' : 'TIMEOUT', write ? MESSAGES.TIMEOUT_WRITE : MESSAGES.TIMEOUT);
   if (err.killed || err.signal === 'SIGTERM') return timeout();
 
-  const code = /APN:([A-Z_]+)/.exec(stderr)?.[1];
+  const apn = /APN:([A-Z_]+)(?::(\d+))?/.exec(stderr);
+  const code = apn?.[1];
   switch (code) {
+    case 'ATTACHMENTS':
+      return new ToolError('ATTACHMENTS', attachmentsMessage(Number(apn?.[2] ?? 0)));
     case 'OUTSIDE':
       return new ToolError('OUTSIDE', MESSAGES.OUTSIDE);
     case 'NOT_FOUND':

@@ -40,12 +40,12 @@ function makeTurndown(): TurndownService {
   return td;
 }
 
-export function htmlToMarkdown(html: string): { markdown: string; images: string[] } {
+export function htmlToMarkdown(html: string, maxChars: number = MAX_MARKDOWN_CHARS): { markdown: string; images: string[] } {
   const { html: stripped, images } = extractImages(html);
   let markdown = makeTurndown().turndown(stripped).trim();
-  if (markdown.length > MAX_MARKDOWN_CHARS) {
-    const marker = `\n\n[… обрезано: заметка длиннее ${MAX_MARKDOWN_CHARS} символов]`;
-    markdown = markdown.slice(0, MAX_MARKDOWN_CHARS - marker.length) + marker;
+  if (markdown.length > maxChars) {
+    const marker = `\n\n[… обрезано: заметка длиннее ${maxChars} символов]`;
+    markdown = markdown.slice(0, maxChars - marker.length) + marker;
   }
   return { markdown, images };
 }
@@ -80,7 +80,7 @@ export async function markdownToHtml(md: string, resolve: ImageResolver): Promis
         return escapeHtml(token.text);
       },
       image(token) {
-        return `<img src="${srcs.get(token.href)}">`;
+        return `<img src="${escapeHtml(srcs.get(token.href) ?? '')}">`;
       },
       paragraph(token) {
         return `<div>${this.parser.parseInline(token.tokens)}</div>\n`;

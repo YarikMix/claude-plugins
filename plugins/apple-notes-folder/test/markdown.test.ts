@@ -53,6 +53,14 @@ describe('htmlToMarkdown', () => {
   });
 });
 
+describe('htmlToMarkdown с лимитом', () => {
+  it('обрезка укладывается в переданный лимит', () => {
+    const { markdown } = htmlToMarkdown(`<div>${'а'.repeat(5000)}</div>`, 1000);
+    expect(markdown.length).toBeLessThanOrEqual(1000);
+    expect(markdown).toMatch(/обрезано: заметка длиннее 1000 символов\]$/);
+  });
+});
+
 describe('extractImages', () => {
   it('понимает src в одинарных кавычках', () => {
     const { html, images } = extractImages("<img alt='x' src='data:image/gif;base64,R0'>");
@@ -88,6 +96,11 @@ describe('markdownToHtml', () => {
     const load = async (p: string) => (p === '/private/tmp/claude-1/x.png' ? 'data:image/png;base64,NEW' : 'bad');
     const html = await markdownToHtml('![](/private/tmp/claude-1/x.png)', makeResolver(null, load));
     expect(html).toContain('<img src="data:image/png;base64,NEW">');
+  });
+
+  it('src картинки экранируется', async () => {
+    const html = await markdownToHtml('![](/p.png)', makeResolver(null, async () => 'file:///a"b<c>&d'));
+    expect(html).toContain('<img src="file:///a&quot;b&lt;c&gt;&amp;d">');
   });
 
   it('update: оставленная заглушка возвращает картинку, убранная — удаляет', async () => {

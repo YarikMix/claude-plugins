@@ -27,7 +27,10 @@ export async function resolveScope(name: string | null, run: Runner): Promise<Sc
   const matches = [...byId.values()].filter((f) => f.name === name);
 
   if (matches.length === 0) {
-    throw new ToolError('CONFIG', `Папка «${name}» не найдена в Заметках. Проверьте имя: ${CONFIGURE_HINT}.`);
+    throw new ToolError(
+      'CONFIG',
+      `Папка «${name}» не найдена в Заметках. Проверьте имя: ${CONFIGURE_HINT}. Папка по умолчанию в скриптах может называться иначе, чем в интерфейсе: в русском интерфейсе «Заметки», в скриптах «Notes».`,
+    );
   }
   if (matches.length > 1) {
     const accounts = [...new Set(matches.map((m) => m.account))].join(', ');

@@ -38757,14 +38757,18 @@ var MESSAGES = {
   FOLDER_GONE: `\u0420\u0430\u0437\u0440\u0435\u0448\u0451\u043D\u043D\u0430\u044F \u043F\u0430\u043F\u043A\u0430 \u0431\u043E\u043B\u044C\u0448\u0435 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0432 \u0417\u0430\u043C\u0435\u0442\u043A\u0430\u0445. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0435\u0451 \u0438\u043C\u044F (${CONFIGURE_HINT}) \u0438 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0441\u0435\u0441\u0441\u0438\u044E.`,
   IO: "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u0440\u043E\u0447\u0438\u0442\u0430\u0442\u044C \u0432\u0440\u0435\u043C\u0435\u043D\u043D\u044B\u0439 \u0444\u0430\u0439\u043B \u0441 \u0442\u0435\u043A\u0441\u0442\u043E\u043C \u0437\u0430\u043C\u0435\u0442\u043A\u0438."
 };
+function attachmentsMessage(n) {
+  return `\u0423 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0435\u0441\u0442\u044C \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F (${n}). \u0417\u0430\u043C\u0435\u0442\u043A\u0438 \u043F\u043E\u0440\u0442\u044F\u0442 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438 \u043B\u044E\u0431\u043E\u043C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0438 \u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u0441\u0435\u0440\u0432\u0435\u0440 \u0442\u0435\u043A\u0441\u0442 \u044D\u0442\u043E\u0439 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u043D\u0435 \u043C\u0435\u043D\u044F\u0435\u0442. \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u0438 \u043D\u043E\u0432\u044B\u0439 \u0442\u0435\u043A\u0441\u0442 \u043C\u043E\u0436\u043D\u043E \u0437\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u0432 \u043D\u043E\u0432\u0443\u044E \u0437\u0430\u043C\u0435\u0442\u043A\u0443.`;
+}
 function toToolResult(e) {
   const text = e instanceof ToolError ? e.message : `\u0412\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u044F\u044F \u043E\u0448\u0438\u0431\u043A\u0430: ${e instanceof Error ? e.message : String(e)}`;
   return { isError: true, content: [{ type: "text", text }] };
 }
 
 // src/images.ts
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 var PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 var HEIC_BRANDS = /* @__PURE__ */ new Set(["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"]);
@@ -38780,7 +38784,7 @@ function sniffImageMime(head) {
   if (ascii.slice(4, 8) === "ftyp" && HEIC_BRANDS.has(ascii.slice(8, 12))) return "image/heic";
   return null;
 }
-async function loadImage(path, root = defaultImageRoot()) {
+async function imageSrc(path, root = defaultImageRoot()) {
   const fail = (why) => new ToolError("IMAGE", `\u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 ${path} \u043D\u0435 \u043F\u0440\u0438\u043D\u044F\u0442\u0430: ${why}.`);
   if (!isAbsolute(path)) throw fail("\u043D\u0443\u0436\u0435\u043D \u0430\u0431\u0441\u043E\u043B\u044E\u0442\u043D\u044B\u0439 \u043F\u0443\u0442\u044C");
   const st2 = await lstat(path).catch(() => null);
@@ -38791,10 +38795,17 @@ async function loadImage(path, root = defaultImageRoot()) {
   const real = await realpath(path);
   if (!realRoot || !real.startsWith(realRoot + sep)) throw fail(`\u0444\u0430\u0439\u043B \u0434\u043E\u043B\u0436\u0435\u043D \u043B\u0435\u0436\u0430\u0442\u044C \u0432 ${root}`);
   if (st2.size > MAX_IMAGE_BYTES) throw fail("\u0444\u0430\u0439\u043B \u0431\u043E\u043B\u044C\u0448\u0435 10 \u041C\u0411");
-  const data = await readFile(real);
-  const mime = sniffImageMime(data);
-  if (!mime) throw fail("\u0444\u043E\u0440\u043C\u0430\u0442 \u043D\u0435 PNG, JPEG, GIF, HEIC \u0438\u043B\u0438 WebP");
-  return `data:${mime};base64,${data.toString("base64")}`;
+  const fh = await open(real, "r");
+  let head;
+  try {
+    const buf = Buffer.alloc(16);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    head = buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+  if (!sniffImageMime(head)) throw fail("\u0444\u043E\u0440\u043C\u0430\u0442 \u043D\u0435 PNG, JPEG, GIF, HEIC \u0438\u043B\u0438 WebP");
+  return pathToFileURL(real).href;
 }
 
 // src/runner.ts
@@ -38804,8 +38815,11 @@ var MAX_BUFFER = 64 * 1024 * 1024;
 function mapOsaFailure(err, stderr, write) {
   const timeout = () => new ToolError(write ? "TIMEOUT_WRITE" : "TIMEOUT", write ? MESSAGES.TIMEOUT_WRITE : MESSAGES.TIMEOUT);
   if (err.killed || err.signal === "SIGTERM") return timeout();
-  const code = /APN:([A-Z_]+)/.exec(stderr)?.[1];
+  const apn = /APN:([A-Z_]+)(?::(\d+))?/.exec(stderr);
+  const code = apn?.[1];
   switch (code) {
+    case "ATTACHMENTS":
+      return new ToolError("ATTACHMENTS", attachmentsMessage(Number(apn?.[2] ?? 0)));
     case "OUTSIDE":
       return new ToolError("OUTSIDE", MESSAGES.OUTSIDE);
     case "NOT_FOUND":
@@ -38857,6 +38871,12 @@ function guardNote(folderId, noteId) {
   if (n.passwordProtected()) fail('LOCKED');
   return n;
 }
+function attachmentCount(n) {
+  // \u0421\u0432\u0435\u0436\u0435\u0435 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u0417\u0430\u043C\u0435\u0442\u043A\u0438 \u0438\u043D\u043E\u0433\u0434\u0430 \u043E\u0442\u0434\u0430\u044E\u0442 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435 \u0434\u0432\u0430\u0436\u0434\u044B \u2014 \u0441\u0447\u0438\u0442\u0430\u0435\u043C \u043F\u043E id \u0431\u0435\u0437 \u043F\u043E\u0432\u0442\u043E\u0440\u043E\u0432.
+  var ids = n.attachments.id(), seen = {}, k = 0;
+  for (var i = 0; i < ids.length; i++) if (!seen[ids[i]]) { seen[ids[i]] = true; k++; }
+  return k;
+}
 function summaries(notes) {
   var ids = notes.id(), names = notes.name(), dates = notes.modificationDate(), out = [];
   for (var i = 0; i < ids.length; i++) out.push({ id: ids[i], name: names[i], modified: dates[i].toISOString() });
@@ -38884,13 +38904,18 @@ function run(argv) {
 }`;
 var searchNotes = PRELUDE + `
 function run(argv) {
-  var f = folderById(argv[0]), q = argv[1];
-  return summaries(f.notes.whose({ _or: [ { name: { _contains: q } }, { plaintext: { _contains: q } } ] }));
+  var f = folderById(argv[0]), q = argv[1].toLowerCase();
+  var ids = f.notes.id(), names = f.notes.name(), texts = f.notes.plaintext(), dates = f.notes.modificationDate(), out = [];
+  for (var i = 0; i < ids.length; i++) {
+    if ((names[i] + '\\n' + (texts[i] || '')).toLowerCase().indexOf(q) !== -1)
+      out.push({ id: ids[i], name: names[i], modified: dates[i].toISOString() });
+  }
+  return JSON.stringify(out);
 }`;
 var readNote = PRELUDE + `
 function run(argv) {
   var n = ${GUARD_CALL};
-  return JSON.stringify({ id: n.id(), name: n.name(), modified: n.modificationDate().toISOString(), body: n.body() });
+  return JSON.stringify({ id: n.id(), name: n.name(), modified: n.modificationDate().toISOString(), body: n.body(), attachments: attachmentCount(n) });
 }`;
 var createNote = PRELUDE + `
 function run(argv) {
@@ -38902,12 +38927,16 @@ function run(argv) {
 var appendNote = PRELUDE + `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var k = attachmentCount(n);
+  if (k > 0) fail('ATTACHMENTS:' + k);
   n.body = n.body() + readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;
 var updateNote = PRELUDE + `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var k = attachmentCount(n);
+  if (k > 0) fail('ATTACHMENTS:' + k);
   n.body = readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;
@@ -38941,7 +38970,10 @@ async function resolveScope(name, run2) {
   for (const f of JSON.parse(await run2(SCRIPTS.listFolders, [], { write: false }))) byId.set(f.id, f);
   const matches = [...byId.values()].filter((f) => f.name === name);
   if (matches.length === 0) {
-    throw new ToolError("CONFIG", `\u041F\u0430\u043F\u043A\u0430 \xAB${name}\xBB \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0432 \u0417\u0430\u043C\u0435\u0442\u043A\u0430\u0445. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0438\u043C\u044F: ${CONFIGURE_HINT}.`);
+    throw new ToolError(
+      "CONFIG",
+      `\u041F\u0430\u043F\u043A\u0430 \xAB${name}\xBB \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u0430 \u0432 \u0417\u0430\u043C\u0435\u0442\u043A\u0430\u0445. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0438\u043C\u044F: ${CONFIGURE_HINT}. \u041F\u0430\u043F\u043A\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0432 \u0441\u043A\u0440\u0438\u043F\u0442\u0430\u0445 \u043C\u043E\u0436\u0435\u0442 \u043D\u0430\u0437\u044B\u0432\u0430\u0442\u044C\u0441\u044F \u0438\u043D\u0430\u0447\u0435, \u0447\u0435\u043C \u0432 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435: \u0432 \u0440\u0443\u0441\u0441\u043A\u043E\u043C \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0435 \xAB\u0417\u0430\u043C\u0435\u0442\u043A\u0438\xBB, \u0432 \u0441\u043A\u0440\u0438\u043F\u0442\u0430\u0445 \xABNotes\xBB.`
+    );
   }
   if (matches.length > 1) {
     const accounts = [...new Set(matches.map((m) => m.account))].join(", ");
@@ -40323,14 +40355,14 @@ function makeTurndown() {
   });
   return td;
 }
-function htmlToMarkdown(html) {
+function htmlToMarkdown(html, maxChars = MAX_MARKDOWN_CHARS) {
   const { html: stripped, images } = extractImages(html);
   let markdown = makeTurndown().turndown(stripped).trim();
-  if (markdown.length > MAX_MARKDOWN_CHARS) {
+  if (markdown.length > maxChars) {
     const marker = `
 
-[\u2026 \u043E\u0431\u0440\u0435\u0437\u0430\u043D\u043E: \u0437\u0430\u043C\u0435\u0442\u043A\u0430 \u0434\u043B\u0438\u043D\u043D\u0435\u0435 ${MAX_MARKDOWN_CHARS} \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432]`;
-    markdown = markdown.slice(0, MAX_MARKDOWN_CHARS - marker.length) + marker;
+[\u2026 \u043E\u0431\u0440\u0435\u0437\u0430\u043D\u043E: \u0437\u0430\u043C\u0435\u0442\u043A\u0430 \u0434\u043B\u0438\u043D\u043D\u0435\u0435 ${maxChars} \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432]`;
+    markdown = markdown.slice(0, maxChars - marker.length) + marker;
   }
   return { markdown, images };
 }
@@ -40361,7 +40393,7 @@ async function markdownToHtml(md, resolve) {
         return escapeHtml(token.text);
       },
       image(token) {
-        return `<img src="${srcs.get(token.href)}">`;
+        return `<img src="${escapeHtml(srcs.get(token.href) ?? "")}">`;
       },
       paragraph(token) {
         return `<div>${this.parser.parseInline(token.tokens)}</div>
@@ -40437,13 +40469,19 @@ var NotesService = class {
 
 // src/tools.ts
 var SCOPE_NOTE = "\u0420\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0442\u043E\u043B\u044C\u043A\u043E \u0441 \u043E\u0434\u043D\u043E\u0439 \u0440\u0430\u0437\u0440\u0435\u0448\u0451\u043D\u043D\u043E\u0439 \u043F\u0430\u043F\u043A\u043E\u0439 Apple Notes; \u0434\u0440\u0443\u0433\u0438\u0435 \u043F\u0430\u043F\u043A\u0438 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B.";
-var IMAGES_HELP = "\u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430: ![\u043F\u043E\u0434\u043F\u0438\u0441\u044C](/\u0430\u0431\u0441\u043E\u043B\u044E\u0442\u043D\u044B\u0439/\u043F\u0443\u0442\u044C) \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u044B \u0438\u0437 /private/tmp/claude-<uid>/ (\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438, \u0432\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0435 \u0432 \u043F\u0440\u043E\u043C\u043F\u0442 Claude Code, \u0438 scratchpad \u0441\u0435\u0441\u0441\u0438\u0438); PNG, JPEG, GIF, HEIC \u0438\u043B\u0438 WebP \u0434\u043E 10 \u041C\u0411. \u041F\u0443\u0442\u044C \u0441 \u043F\u0440\u043E\u0431\u0435\u043B\u0430\u043C\u0438 \u2014 \u0432 \u0443\u0433\u043B\u043E\u0432\u044B\u0445 \u0441\u043A\u043E\u0431\u043A\u0430\u0445: ![](<\u043F\u0443\u0442\u044C>).";
+var IMAGES_HELP = "\u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430: ![\u043F\u043E\u0434\u043F\u0438\u0441\u044C](/\u0430\u0431\u0441\u043E\u043B\u044E\u0442\u043D\u044B\u0439/\u043F\u0443\u0442\u044C) \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u044B \u0438\u0437 /private/tmp/claude-<uid>/ (\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438, \u0432\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u044B\u0435 \u0432 \u043F\u0440\u043E\u043C\u043F\u0442 Claude Code, \u0438 scratchpad \u0441\u0435\u0441\u0441\u0438\u0438); PNG, JPEG, GIF, HEIC \u0438\u043B\u0438 WebP \u0434\u043E 10 \u041C\u0411; \u0432 \u0437\u0430\u043C\u0435\u0442\u043A\u0435 \u043E\u043D\u0430 \u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0441\u044F \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u0435\u043C. \u041F\u0443\u0442\u044C \u0441 \u043F\u0440\u043E\u0431\u0435\u043B\u0430\u043C\u0438 \u2014 \u0432 \u0443\u0433\u043B\u043E\u0432\u044B\u0445 \u0441\u043A\u043E\u0431\u043A\u0430\u0445: ![](<\u043F\u0443\u0442\u044C>).";
+var ATTACHMENTS_RULE = "\u0423 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0441 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F\u043C\u0438 (\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430\u043C\u0438, \u0444\u0430\u0439\u043B\u0430\u043C\u0438) \u2014 \u043E\u0442\u043A\u0430\u0437: \u0417\u0430\u043C\u0435\u0442\u043A\u0438 \u043F\u043E\u0440\u0442\u044F\u0442 \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u0440\u0438 \u043B\u044E\u0431\u043E\u043C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0438 \u0442\u0435\u043A\u0441\u0442\u0430. \u0422\u0430\u043A\u0443\u044E \u0437\u0430\u043C\u0435\u0442\u043A\u0443 \u043C\u043E\u0436\u043D\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0438\u0442\u0430\u0442\u044C \u0438 \u0443\u0434\u0430\u043B\u044F\u0442\u044C; \u043D\u043E\u0432\u044B\u0439 \u0442\u0435\u043A\u0441\u0442 \u0438 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u2014 \u0432 \u043D\u043E\u0432\u0443\u044E \u0437\u0430\u043C\u0435\u0442\u043A\u0443.";
+function attachmentsLine(n) {
+  return `
+
+[\u0412\u043B\u043E\u0436\u0435\u043D\u0438\u0439 \u0432 \u0437\u0430\u043C\u0435\u0442\u043A\u0435: ${n} \u2014 \u0438\u0445 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442]`;
+}
 var byModifiedDesc = (a, b) => b.modified.localeCompare(a.modified);
 var json = (v) => JSON.stringify(v, null, 2);
 function makeTools(deps) {
   const service = async () => new NotesService(deps.run, (await deps.getScope()).folderId);
   const noteId = external_exports.string().min(1).describe("id \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0438\u0437 notes_list \u0438\u043B\u0438 notes_search");
-  const newImages = () => makeResolver(null, deps.loadImage);
+  const newImages = () => makeResolver(null, deps.imageSrc);
   return [
     {
       name: "notes_list",
@@ -40473,10 +40511,14 @@ function makeTools(deps) {
     },
     {
       name: "notes_read",
-      description: `\u0417\u0430\u043C\u0435\u0442\u043A\u0430 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u0432 Markdown; \u043F\u0435\u0440\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430 \u2014 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A. \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u043F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u0433\u043B\u0443\u0448\u043A\u0430\u043C\u0438 ![\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 N](note-image:N). ${SCOPE_NOTE}`,
+      description: `\u0417\u0430\u043C\u0435\u0442\u043A\u0430 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u0432 Markdown; \u043F\u0435\u0440\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430 \u2014 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A. \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u043F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0437\u0430\u0433\u043B\u0443\u0448\u043A\u0430\u043C\u0438 ![\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 N](note-image:N). \u0415\u0441\u043B\u0438 \u0443 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0435\u0441\u0442\u044C \u0432\u043B\u043E\u0436\u0435\u043D\u0438\u044F, \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u044F\u044F \u0441\u0442\u0440\u043E\u043A\u0430 \u043E\u0442\u0432\u0435\u0442\u0430 \u2014 \xAB[\u0412\u043B\u043E\u0436\u0435\u043D\u0438\u0439 \u0432 \u0437\u0430\u043C\u0435\u0442\u043A\u0435: N \u2014 \u0438\u0445 \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0435\u0442]\xBB. ${SCOPE_NOTE}`,
       shape: { id: noteId },
       annotations: { readOnlyHint: true },
-      handler: async ({ id }) => htmlToMarkdown((await (await service()).read(id)).body).markdown
+      handler: async ({ id }) => {
+        const note = await (await service()).read(id);
+        const tail = note.attachments > 0 ? attachmentsLine(note.attachments) : "";
+        return htmlToMarkdown(note.body, MAX_MARKDOWN_CHARS - tail.length).markdown + tail;
+      }
     },
     {
       name: "notes_create",
@@ -40490,7 +40532,7 @@ function makeTools(deps) {
     },
     {
       name: "notes_append",
-      description: `\u0414\u043E\u043F\u0438\u0441\u0430\u0442\u044C Markdown \u0432 \u043A\u043E\u043D\u0435\u0446 \u0437\u0430\u043C\u0435\u0442\u043A\u0438; \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0439 \u0442\u0435\u043A\u0441\u0442 \u0438 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u043D\u0435 \u043C\u0435\u043D\u044F\u044E\u0442\u0441\u044F. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `\u0414\u043E\u043F\u0438\u0441\u0430\u0442\u044C Markdown \u0432 \u043A\u043E\u043D\u0435\u0446 \u0437\u0430\u043C\u0435\u0442\u043A\u0438; \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044E\u0449\u0438\u0439 \u0442\u0435\u043A\u0441\u0442 \u043D\u0435 \u043C\u0435\u043D\u044F\u0435\u0442\u0441\u044F. ${ATTACHMENTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: external_exports.string().min(1) },
       annotations: {},
       handler: async ({ id, markdown }) => {
@@ -40501,14 +40543,12 @@ function makeTools(deps) {
     },
     {
       name: "notes_update",
-      description: `\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 notes_read, \u0441 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043A\u043E\u043C \u043F\u0435\u0440\u0432\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439. \u0417\u0430\u0433\u043B\u0443\u0448\u043A\u0438 ![\u2026](note-image:N) \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u044E\u0442 \u0438\u0441\u0445\u043E\u0434\u043D\u044B\u0435 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u043D\u0430 \u043C\u0435\u0441\u0442\u043E; \u0443\u0431\u0440\u0430\u043D\u043D\u0430\u044F \u0437\u0430\u0433\u043B\u0443\u0448\u043A\u0430 \u0443\u0434\u0430\u043B\u044F\u0435\u0442 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0443. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0441\u0442 \u0437\u0430\u043C\u0435\u0442\u043A\u0438 \u0446\u0435\u043B\u0438\u043A\u043E\u043C \u2014 \u0432 \u0444\u043E\u0440\u043C\u0430\u0442\u0435 notes_read, \u0441 \u0437\u0430\u0433\u043E\u043B\u043E\u0432\u043A\u043E\u043C \u043F\u0435\u0440\u0432\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u043E\u0439. ${ATTACHMENTS_RULE} \u0417\u0430\u0433\u043B\u0443\u0448\u043A\u0438 ![\u2026](note-image:N) \u0432\u043E \u0432\u0445\u043E\u0434\u0435 \u043D\u0435 \u043F\u0440\u0438\u043D\u0438\u043C\u0430\u044E\u0442\u0441\u044F. ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: external_exports.string().min(1) },
       annotations: { destructiveHint: true },
       handler: async ({ id, markdown }) => {
-        const svc = await service();
-        const { images } = extractImages((await svc.read(id)).body);
-        const html = await markdownToHtml(markdown, makeResolver(images, deps.loadImage));
-        await svc.update(id, html);
+        const html = await markdownToHtml(markdown, newImages());
+        await (await service()).update(id, html);
         return json({ id });
       }
     },
@@ -40529,7 +40569,7 @@ function makeTools(deps) {
 var run = makeOsascriptRunner();
 var getScope = makeScopeProvider(configuredFolder(process.env), run);
 var server = new McpServer({ name: "apple-notes-folder", version: "1.0.0" });
-for (const tool of makeTools({ getScope, run, loadImage: (p) => loadImage(p) })) {
+for (const tool of makeTools({ getScope, run, imageSrc: (p) => imageSrc(p) })) {
   server.registerTool(
     tool.name,
     { description: tool.description, inputSchema: tool.shape, annotations: tool.annotations },

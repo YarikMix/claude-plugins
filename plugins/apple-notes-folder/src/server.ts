@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { toToolResult } from './errors.js';
-import { loadImage } from './images.js';
+import { imageSrc } from './images.js';
 import { makeOsascriptRunner } from './runner.js';
 import { configuredFolder, makeScopeProvider } from './scope.js';
 import { makeTools } from './tools.js';
@@ -11,7 +11,7 @@ const getScope = makeScopeProvider(configuredFolder(process.env), run);
 
 const server = new McpServer({ name: 'apple-notes-folder', version: '1.0.0' });
 
-for (const tool of makeTools({ getScope, run, loadImage: (p) => loadImage(p) })) {
+for (const tool of makeTools({ getScope, run, imageSrc: (p) => imageSrc(p) })) {
   server.registerTool(
     tool.name,
     { description: tool.description, inputSchema: tool.shape, annotations: tool.annotations },

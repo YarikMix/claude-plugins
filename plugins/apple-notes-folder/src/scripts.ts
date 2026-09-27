@@ -25,6 +25,12 @@ function guardNote(folderId, noteId) {
   if (n.passwordProtected()) fail('LOCKED');
   return n;
 }
+function attachmentCount(n) {
+  // Свежее вложение Заметки иногда отдают в списке дважды — считаем по id без повторов.
+  var ids = n.attachments.id(), seen = {}, k = 0;
+  for (var i = 0; i < ids.length; i++) if (!seen[ids[i]]) { seen[ids[i]] = true; k++; }
+  return k;
+}
 function summaries(notes) {
   var ids = notes.id(), names = notes.name(), dates = notes.modificationDate(), out = [];
   for (var i = 0; i < ids.length; i++) out.push({ id: ids[i], name: names[i], modified: dates[i].toISOString() });
@@ -58,12 +64,19 @@ function run(argv) {
   return summaries(f.notes);
 }`;
 
+// Поиск без встроенного фильтра Заметок: тот тратит ~150 мс на каждое совпадение и на ~1200 заметках не
+// укладывается в таймаут. Поля всех заметок папки берутся пакетно, сравнение — здесь, без учёта регистра.
 const searchNotes =
   PRELUDE +
   `
 function run(argv) {
-  var f = folderById(argv[0]), q = argv[1];
-  return summaries(f.notes.whose({ _or: [ { name: { _contains: q } }, { plaintext: { _contains: q } } ] }));
+  var f = folderById(argv[0]), q = argv[1].toLowerCase();
+  var ids = f.notes.id(), names = f.notes.name(), texts = f.notes.plaintext(), dates = f.notes.modificationDate(), out = [];
+  for (var i = 0; i < ids.length; i++) {
+    if ((names[i] + '\\n' + (texts[i] || '')).toLowerCase().indexOf(q) !== -1)
+      out.push({ id: ids[i], name: names[i], modified: dates[i].toISOString() });
+  }
+  return JSON.stringify(out);
 }`;
 
 const readNote =
@@ -71,7 +84,7 @@ const readNote =
   `
 function run(argv) {
   var n = ${GUARD_CALL};
-  return JSON.stringify({ id: n.id(), name: n.name(), modified: n.modificationDate().toISOString(), body: n.body() });
+  return JSON.stringify({ id: n.id(), name: n.name(), modified: n.modificationDate().toISOString(), body: n.body(), attachments: attachmentCount(n) });
 }`;
 
 const createNote =
@@ -89,6 +102,8 @@ const appendNote =
   `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var k = attachmentCount(n);
+  if (k > 0) fail('ATTACHMENTS:' + k);
   n.body = n.body() + readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;
@@ -98,6 +113,8 @@ const updateNote =
   `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var k = attachmentCount(n);
+  if (k > 0) fail('ATTACHMENTS:' + k);
   n.body = readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;

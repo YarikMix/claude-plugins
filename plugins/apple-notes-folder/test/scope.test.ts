@@ -44,8 +44,9 @@ describe('resolveScope', () => {
     expect((await resolveScope('Личное', run)).folderId).toBe('F1');
   });
 
-  it('не найдена', async () => {
+  it('не найдена — с подсказкой про имя папки по умолчанию', async () => {
     await expect(resolveScope('Нет такой', folders([]))).rejects.toThrow(/не найдена/);
+    await expect(resolveScope('Заметки', folders([]))).rejects.toThrow(/в скриптах «Notes»/);
   });
 
   it('несколько — перечисляет аккаунты', async () => {

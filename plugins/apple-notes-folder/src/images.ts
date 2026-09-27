@@ -1,5 +1,6 @@
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ToolError } from './errors.js';
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -22,8 +23,11 @@ export function sniffImageMime(head: Buffer): string | null {
   return null;
 }
 
-/** Проверяет файл картинки и возвращает его как data:-URI для встраивания в HTML заметки. */
-export async function loadImage(path: string, root: string = defaultImageRoot()): Promise<string> {
+/**
+ * Проверяет файл картинки и возвращает file://-URL его realpath для <img src> в HTML заметки:
+ * так Заметки копируют файл в заметку и показывают картинку (data:-URI они показывают битой плашкой «Файл»).
+ */
+export async function imageSrc(path: string, root: string = defaultImageRoot()): Promise<string> {
   const fail = (why: string) => new ToolError('IMAGE', `Картинка ${path} не принята: ${why}.`);
   if (!isAbsolute(path)) throw fail('нужен абсолютный путь');
 
@@ -38,8 +42,15 @@ export async function loadImage(path: string, root: string = defaultImageRoot())
 
   if (st.size > MAX_IMAGE_BYTES) throw fail('файл больше 10 МБ');
 
-  const data = await readFile(real);
-  const mime = sniffImageMime(data);
-  if (!mime) throw fail('формат не PNG, JPEG, GIF, HEIC или WebP');
-  return `data:${mime};base64,${data.toString('base64')}`;
+  const fh = await open(real, 'r');
+  let head: Buffer;
+  try {
+    const buf = Buffer.alloc(16);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    head = buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+  if (!sniffImageMime(head)) throw fail('формат не PNG, JPEG, GIF, HEIC или WebP');
+  return pathToFileURL(real).href;
 }

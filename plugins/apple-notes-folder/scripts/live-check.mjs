@@ -36,6 +36,13 @@ const SETUP = `function run(argv) {
   sub.notes.push(app.Note({ body: '<div><h1>Во вложенной</h1></div><div>' + argv[3] + '</div>' }));
   return JSON.stringify({ foreignNote: foreign.notes[0].id(), subNote: sub.notes[0].id() });
 }`;
+// Состояние своей тестовой заметки: вложения без повторов по id и число <img> в body().
+// Картинка через file:// — 1 вложение и 1 <img>; битая плашка «Файл» (data:-URI) — 1 вложение и 0 <img>.
+const NOTE_STATE = `function run(argv) {
+  var n = Application('Notes').notes.byId(argv[0]), ids = n.attachments.id(), seen = {}, k = 0;
+  for (var i = 0; i < ids.length; i++) if (!seen[ids[i]]) { seen[ids[i]] = true; k++; }
+  return JSON.stringify({ attachments: k, img: (n.body().match(/<img/g) || []).length });
+}`;
 const NOTE_CONTAINER = `function run(argv) {
   try { return Application('Notes').notes.byId(argv[0]).container().name(); } catch (e) { return 'нет'; }
 }`;
@@ -83,52 +90,89 @@ async function call(client, name, args) {
 
 try {
   await mkdir(IMG_DIR, { recursive: true });
-  const png = `${IMG_DIR}/pixel.png`;
+  // Пробел и кириллица в имени — как у скриншотов; в HTML уходит file://-URL с процентным кодированием.
+  const png = `${IMG_DIR}/снимок экрана 1.png`;
   await writeFile(png, PNG);
   const ids = JSON.parse(await jxa(SETUP, ALLOWED, FOREIGN, SUB, SECRET));
   const c = await connect(ALLOWED);
+  // Заметки обрабатывают вложение не мгновенно: ждём, пока состояние заметки станет ожидаемым (до 15 с).
+  async function stateOf(nid, want) {
+    let st;
+    for (let i = 0; i < 15; i++) {
+      st = JSON.parse(await jxa(NOTE_STATE, nid));
+      if (st.attachments === want.attachments && st.img === want.img) break;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    return st;
+  }
+  const isAttachmentsRefusal = (r) => r.isError && r.text.includes('вложения');
 
-  // 1. Создание: заголовок и встраивание картинки — решения из раздела спеки «Запись».
-  const created = await call(c, 'notes_create', { title: 'Проверка связи', markdown: `Текст **жирный**\n\n![](${png})` });
+  // 1. Заметка A с картинкой: вложение через file://, текст заметки с вложениями сервер не меняет.
+  const createdA = await call(c, 'notes_create', { title: 'Проверка картинки', markdown: `Подпись\n\n![](<${png}>)` });
+  check('notes_create с картинкой', !createdA.isError, createdA.text);
+  const idA = JSON.parse(createdA.text).id;
+  let st = await stateOf(idA, { attachments: 1, img: 1 });
+  check('картинка стала одним вложением и видна в теле (не «Файл»)', st.attachments === 1 && st.img === 1, JSON.stringify(st));
+  let md = (await call(c, 'notes_read', { id: idA })).text;
+  check('notes_read(A) сообщает о вложении', md.includes('[Вложений в заметке: 1'), md.slice(-80));
+  const appA = await call(c, 'notes_append', { id: idA, markdown: 'взлом вложений' });
+  check('notes_append(A) → отказ из-за вложений', isAttachmentsRefusal(appA), appA.text);
+  const updA = await call(c, 'notes_update', { id: idA, markdown: '# Проверка картинки\n\nзамена' });
+  check('notes_update(A) → отказ из-за вложений', isAttachmentsRefusal(updA), updA.text);
+  st = JSON.parse(await jxa(NOTE_STATE, idA));
+  md = (await call(c, 'notes_read', { id: idA })).text;
+  check(
+    'у A после отказов по-прежнему 1 вложение',
+    st.attachments === 1 && st.img === 1 && md.includes('[Вложений в заметке: 1') && !md.includes('взлом'),
+    JSON.stringify(st),
+  );
+
+  // 2. Заметка B без картинок: заголовок, оформление, дописывание, замена.
+  const created = await call(c, 'notes_create', { title: 'Проверка связи', markdown: 'Текст **жирный**' });
   check('notes_create', !created.isError, created.text);
   const id = JSON.parse(created.text).id;
   const mine = JSON.parse((await call(c, 'notes_list', {})).text).notes.find((n) => n.id === id);
   check('заголовок заметки совпал с title', mine?.name === 'Проверка связи', `name=${JSON.stringify(mine?.name)}`);
-  let md = (await call(c, 'notes_read', { id })).text;
-  console.log(`--- notes_read после создания ---\n${md.slice(0, 500)}\n---`);
+  md = (await call(c, 'notes_read', { id })).text;
+  console.log(`--- notes_read(B) после создания ---\n${md.slice(0, 500)}\n---`);
   check('оформление сохранилось', md.includes('**жирный**'));
-  check('картинка встроена в текст (note-image:1)', md.includes('note-image:1'));
-
-  // 2. Дописывание.
+  check('без вложений строки о вложениях нет', !md.includes('Вложений в заметке'));
   await call(c, 'notes_append', { id, markdown: '- пункт добавлен' });
   md = (await call(c, 'notes_read', { id })).text;
   check('append дописал текст', md.includes('пункт добавлен'));
-  check('append сохранил картинку', md.includes('note-image:1'));
-
-  // 3. Замена с заглушкой.
   const upd = await call(c, 'notes_update', { id, markdown: md.replace('**жирный**', '**изменён**') });
   check('notes_update', !upd.isError, upd.text);
   md = (await call(c, 'notes_read', { id })).text;
-  check('update заменил текст', md.includes('**изменён**'));
-  check('update сохранил картинку по заглушке', md.includes('note-image:1'));
+  check('update заменил текст', md.includes('**изменён**') && md.includes('пункт добавлен'));
 
-  // 4. Поиск.
+  // 3. Поиск.
   const s1 = JSON.parse((await call(c, 'notes_search', { query: 'ИЗМЕНЁН' })).text);
-  check('поиск без учёта регистра, кириллица', s1.total >= 1, `total=${s1.total}`);
+  check('поиск без учёта регистра, кириллица', s1.total === 1, `total=${s1.total}`);
+  const s1e = JSON.parse((await call(c, 'notes_search', { query: 'изменен' })).text);
+  check('поиск различает «ё» и «е»', s1e.total === 0, `total=${s1e.total}`);
   const s2 = JSON.parse((await call(c, 'notes_search', { query: SECRET })).text);
   check('поиск не видит чужую и вложенную папки', s2.total === 0, `total=${s2.total}`);
   // Запрос с дефисом в начале не должен разбираться osascript как опция.
   const s3 = await call(c, 'notes_search', { query: `-${SECRET}` });
   check('поиск с дефисом в начале запроса', !s3.isError, s3.isError ? s3.text : `total=${JSON.parse(s3.text).total}`);
 
-  // 5. Замена без заглушки удаляет картинку.
-  await call(c, 'notes_update', { id, markdown: md.replace(/!\[[^\]]*\]\(note-image:1\)/, '') });
+  // 4. Картинка в существующую заметку без вложений — через notes_append; дальше заметка только для чтения.
+  const appImg = await call(c, 'notes_append', { id, markdown: `![](<${png}>)` });
+  check('notes_append(B) с картинкой', !appImg.isError, appImg.text);
+  st = await stateOf(id, { attachments: 1, img: 1 });
   md = (await call(c, 'notes_read', { id })).text;
-  check('убранная заглушка удалила картинку', !md.includes('note-image:'));
+  check(
+    'у B 1 вложение, текст B на месте',
+    st.attachments === 1 && st.img === 1 && md.includes('**изменён**') && md.includes('пункт добавлен') && md.includes('[Вложений в заметке: 1'),
+    JSON.stringify(st),
+  );
+  const appB2 = await call(c, 'notes_append', { id, markdown: 'ещё' });
+  check('повторный notes_append(B) → отказ из-за вложений', isAttachmentsRefusal(appB2), appB2.text);
 
   // 6. Список — только своя заметка (вложенная папка не входит).
   const list = JSON.parse((await call(c, 'notes_list', { limit: 200 })).text);
-  check('список: только своя заметка', list.total === 1 && list.notes[0]?.id === id, `total=${list.total}`);
+  const listed = list.notes.map((n) => n.id).sort();
+  check('список: только свои заметки', list.total === 2 && JSON.stringify(listed) === JSON.stringify([id, idA].sort()), `total=${list.total}`);
 
   // 7. Чужая и вложенная папки — отказ без названия заметки.
   for (const [label, nid] of [
@@ -152,6 +196,8 @@ try {
   // 8. Удаление своей.
   const del = await call(c, 'notes_delete', { id });
   check('notes_delete', !del.isError, del.text);
+  const delA = await call(c, 'notes_delete', { id: idA });
+  check('notes_delete заметки с вложением', !delA.isError, delA.text);
   const gone = await call(c, 'notes_read', { id });
   check('удалённая заметка недоступна', gone.isError, gone.text);
 
@@ -159,7 +205,7 @@ try {
   const e1 = await call(await connect(''), 'notes_list', {});
   check('папка не задана → ошибка настройки', e1.isError && e1.text.includes('/plugin configure'), e1.text);
   const e2 = await call(await connect(`anf-missing-${SUFFIX}`), 'notes_list', {});
-  check('папка не существует → «не найдена»', e2.isError && e2.text.includes('не найдена'), e2.text);
+  check('папка не существует → «не найдена» с подсказкой про «Notes»', e2.isError && e2.text.includes('не найдена') && e2.text.includes('«Notes»'), e2.text);
 
   // 10. Время на большой папке — только чтение.
   if (process.env.LIVE_BIG_FOLDER) {
@@ -172,6 +218,8 @@ try {
     const ts = Date.now() - t;
     const total = (r) => (r.isError ? r.text : JSON.parse(r.text).total);
     console.log(`Большая папка: notes_list ${tl} мс (total=${total(l)}), notes_search ${ts} мс (total=${total(s)})`);
+    check('большая папка: notes_list без ошибки', !l.isError, l.isError ? l.text : '');
+    check('поиск по широкому запросу уложился в 30 с', !s.isError && ts < 30_000, s.isError ? s.text : `${ts} мс`);
   }
 } finally {
   for (const client of clients) await client.close().catch(() => {});

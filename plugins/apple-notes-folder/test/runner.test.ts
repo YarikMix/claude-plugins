@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mapOsaFailure, makeOsascriptRunner, OSA_TIMEOUT_MS } from '../src/runner.js';
-import { MESSAGES } from '../src/errors.js';
+import { MESSAGES, attachmentsMessage } from '../src/errors.js';
 
 describe('mapOsaFailure', () => {
   it('разбирает коды APN из stderr', () => {
@@ -10,6 +10,13 @@ describe('mapOsaFailure', () => {
     expect(mapOsaFailure({}, 'Error: APN:LOCKED', false).code).toBe('LOCKED');
     expect(mapOsaFailure({}, 'Error: APN:FOLDER_GONE', false).code).toBe('CONFIG');
     expect(mapOsaFailure({}, 'Error: APN:IO', true).code).toBe('OSA');
+  });
+
+  it('вложения: код ATTACHMENTS с числом вложений', () => {
+    const e = mapOsaFailure({}, 'execution error: Error: APN:ATTACHMENTS:3 (-2700)', true);
+    expect(e.code).toBe('ATTACHMENTS');
+    expect(e.message).toContain('(3)');
+    expect(e.message).toBe(attachmentsMessage(3));
   });
 
   it('нет разрешения на автоматизацию', () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { extractImages, htmlToMarkdown, makeResolver, markdownToHtml, titleHtml } from './markdown.js';
+import { MAX_MARKDOWN_CHARS, htmlToMarkdown, makeResolver, markdownToHtml, titleHtml } from './markdown.js';
 import { NotesService, type NoteSummary } from './notes.js';
 import type { Runner } from './runner.js';
 import type { Scope } from './scope.js';
@@ -7,7 +7,7 @@ import type { Scope } from './scope.js';
 export interface ToolDeps {
   getScope: () => Promise<Scope>;
   run: Runner;
-  loadImage: (path: string) => Promise<string>;
+  imageSrc: (path: string) => Promise<string>;
 }
 
 export interface ToolDef {
@@ -20,7 +20,13 @@ export interface ToolDef {
 
 const SCOPE_NOTE = 'Работает только с одной разрешённой папкой Apple Notes; другие папки недоступны.';
 const IMAGES_HELP =
-  'Картинка: ![подпись](/абсолютный/путь) — только файлы из /private/tmp/claude-<uid>/ (картинки, вставленные в промпт Claude Code, и scratchpad сессии); PNG, JPEG, GIF, HEIC или WebP до 10 МБ. Путь с пробелами — в угловых скобках: ![](<путь>).';
+  'Картинка: ![подпись](/абсолютный/путь) — только файлы из /private/tmp/claude-<uid>/ (картинки, вставленные в промпт Claude Code, и scratchpad сессии); PNG, JPEG, GIF, HEIC или WebP до 10 МБ; в заметке она становится вложением. Путь с пробелами — в угловых скобках: ![](<путь>).';
+const ATTACHMENTS_RULE =
+  'У заметки с вложениями (картинками, файлами) — отказ: Заметки портят вложения при любом изменении текста. Такую заметку можно только читать и удалять; новый текст и картинки — в новую заметку.';
+
+export function attachmentsLine(n: number): string {
+  return `\n\n[Вложений в заметке: ${n} — их содержимое сервер не показывает]`;
+}
 
 const byModifiedDesc = (a: NoteSummary, b: NoteSummary) => b.modified.localeCompare(a.modified);
 const json = (v: unknown) => JSON.stringify(v, null, 2);
@@ -28,7 +34,7 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 export function makeTools(deps: ToolDeps): ToolDef[] {
   const service = async () => new NotesService(deps.run, (await deps.getScope()).folderId);
   const noteId = z.string().min(1).describe('id заметки из notes_list или notes_search');
-  const newImages = () => makeResolver(null, deps.loadImage);
+  const newImages = () => makeResolver(null, deps.imageSrc);
 
   return [
     {
@@ -59,10 +65,14 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_read',
-      description: `Заметка целиком в Markdown; первая строка — заголовок. Картинки заметки показаны заглушками ![картинка N](note-image:N). ${SCOPE_NOTE}`,
+      description: `Заметка целиком в Markdown; первая строка — заголовок. Картинки заметки показаны заглушками ![картинка N](note-image:N). Если у заметки есть вложения, последняя строка ответа — «[Вложений в заметке: N — их содержимое сервер не показывает]». ${SCOPE_NOTE}`,
       shape: { id: noteId },
       annotations: { readOnlyHint: true },
-      handler: async ({ id }: { id: string }) => htmlToMarkdown((await (await service()).read(id)).body).markdown,
+      handler: async ({ id }: { id: string }) => {
+        const note = await (await service()).read(id);
+        const tail = note.attachments > 0 ? attachmentsLine(note.attachments) : '';
+        return htmlToMarkdown(note.body, MAX_MARKDOWN_CHARS - tail.length).markdown + tail;
+      },
     },
     {
       name: 'notes_create',
@@ -76,7 +86,7 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_append',
-      description: `Дописать Markdown в конец заметки; существующий текст и картинки не меняются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Дописать Markdown в конец заметки; существующий текст не меняется. ${ATTACHMENTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: {},
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {
@@ -87,14 +97,12 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_update',
-      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. Заглушки ![…](note-image:N) возвращают исходные картинки на место; убранная заглушка удаляет картинку. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. ${ATTACHMENTS_RULE} Заглушки ![…](note-image:N) во входе не принимаются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: { destructiveHint: true },
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {
-        const svc = await service();
-        const { images } = extractImages((await svc.read(id)).body);
-        const html = await markdownToHtml(markdown, makeResolver(images, deps.loadImage));
-        await svc.update(id, html);
+        const html = await markdownToHtml(markdown, newImages());
+        await (await service()).update(id, html);
         return json({ id });
       },
     },

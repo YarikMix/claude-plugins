@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtemp, writeFile, symlink, rm, mkdir, truncate } from 'node:fs/promises';
+import { mkdtemp, writeFile, symlink, rm, mkdir, truncate, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadImage, sniffImageMime, MAX_IMAGE_BYTES, defaultImageRoot } from '../src/images.js';
+import { pathToFileURL } from 'node:url';
+import { imageSrc, sniffImageMime, MAX_IMAGE_BYTES, defaultImageRoot } from '../src/images.js';
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const JPEG = Buffer.from('ffd8ffe000104a464946', 'hex');
@@ -19,6 +20,7 @@ beforeAll(async () => {
   await writeFile(join(root, 'a.png'), PNG);
   await writeFile(join(root, 'a.jpg'), JPEG);
   await writeFile(join(root, 'a.heic'), HEIC);
+  await writeFile(join(root, 'снимок экрана 1.png'), PNG);
   await writeFile(join(root, 'fake.png'), 'просто текст');
   await writeFile(join(outside, 'b.png'), PNG);
   await symlink(join(outside, 'b.png'), join(root, 'link.png'));
@@ -44,40 +46,49 @@ describe('sniffImageMime', () => {
   });
 });
 
-describe('loadImage', () => {
-  it('принимает настоящие PNG, JPEG и HEIC внутри корня', async () => {
-    expect(await loadImage(join(root, 'a.png'), root)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
-    expect(await loadImage(join(root, 'a.jpg'), root)).toMatch(/^data:image\/jpeg;base64,/);
-    expect(await loadImage(join(root, 'a.heic'), root)).toMatch(/^data:image\/heic;base64,/);
+describe('imageSrc', () => {
+  it('принимает настоящие PNG, JPEG и HEIC внутри корня и отдаёт file:// их realpath', async () => {
+    for (const name of ['a.png', 'a.jpg', 'a.heic']) {
+      const p = join(root, name);
+      expect(await imageSrc(p, root)).toBe(pathToFileURL(await realpath(p)).href);
+    }
+    expect(await imageSrc(join(root, 'a.png'), root)).toMatch(/^file:\/\/\//);
+  });
+
+  it('пробелы и кириллица в имени — процентное кодирование', async () => {
+    const src = await imageSrc(join(root, 'снимок экрана 1.png'), root);
+    expect(src).toContain('%20');
+    expect(src).toContain(encodeURIComponent('снимок'));
+    expect(src).not.toMatch(/[ а-я]/);
   });
 
   it('отказывает файлу вне корня', async () => {
-    await expect(loadImage(join(outside, 'b.png'), root)).rejects.toThrow(/должен лежать/);
+    await expect(imageSrc(join(outside, 'b.png'), root)).rejects.toThrow(/должен лежать/);
   });
 
   it('отказывает символической ссылке', async () => {
-    await expect(loadImage(join(root, 'link.png'), root)).rejects.toThrow(/символическая ссылка/);
+    await expect(imageSrc(join(root, 'link.png'), root)).rejects.toThrow(/символическая ссылка/);
   });
 
   it('отказывает файлу за ссылкой на каталог вне корня', async () => {
-    await expect(loadImage(join(root, 'sub', 'dirlink', 'b.png'), root)).rejects.toThrow(/должен лежать/);
+    await expect(imageSrc(join(root, 'sub', 'dirlink', 'b.png'), root)).rejects.toThrow(/должен лежать/);
   });
 
   it('отказывает тексту с расширением .png', async () => {
-    await expect(loadImage(join(root, 'fake.png'), root)).rejects.toThrow(/формат/);
+    await expect(imageSrc(join(root, 'fake.png'), root)).rejects.toThrow(/формат/);
   });
 
   it('отказывает файлу больше 10 МБ', async () => {
-    await expect(loadImage(join(root, 'big.png'), root)).rejects.toThrow(/10 МБ/);
+    await expect(imageSrc(join(root, 'big.png'), root)).rejects.toThrow(/10 МБ/);
   });
 
   it('отказывает относительному пути и несуществующему файлу', async () => {
-    await expect(loadImage('a.png', root)).rejects.toThrow(/абсолютный путь/);
-    await expect(loadImage(join(root, 'nope.png'), root)).rejects.toThrow(/не найден/);
+    await expect(imageSrc('a.png', root)).rejects.toThrow(/абсолютный путь/);
+    await expect(imageSrc(join(root, 'nope.png'), root)).rejects.toThrow(/не найден/);
   });
 
   it('все отказы — ToolError с кодом IMAGE', async () => {
-    await expect(loadImage(join(root, 'fake.png'), root)).rejects.toMatchObject({ code: 'IMAGE' });
+    await expect(imageSrc(join(root, 'fake.png'), root)).rejects.toMatchObject({ code: 'IMAGE' });
   });
 
   it('корень по умолчанию — временная папка Claude Code текущего пользователя', () => {

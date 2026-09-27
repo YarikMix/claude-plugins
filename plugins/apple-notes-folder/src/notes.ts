@@ -12,6 +12,7 @@ export interface NoteSummary {
 
 export interface NoteFull extends NoteSummary {
   body: string;
+  attachments: number;
 }
 
 /** HTML тела уходит в скрипт временным файлом, а не аргументом: так он не упирается в лимит argv. */

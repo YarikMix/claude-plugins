@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'TIMEOUT_WRITE'
   | 'IMAGE'
   | 'IMAGE_REF'
+  | 'ATTACHMENTS'
   | 'OSA';
 
 export class ToolError extends Error {
@@ -34,6 +35,11 @@ export const MESSAGES = {
   FOLDER_GONE: `Разрешённая папка больше не найдена в Заметках. Проверьте её имя (${CONFIGURE_HINT}) и перезапустите сессию.`,
   IO: 'Не удалось прочитать временный файл с текстом заметки.',
 } as const;
+
+/** Отказ дописывать и менять текст заметки с вложениями: запись body портит вложения. */
+export function attachmentsMessage(n: number): string {
+  return `У заметки есть вложения (${n}). Заметки портят вложения при любом изменении текста, поэтому сервер текст этой заметки не меняет. Картинки и новый текст можно записать в новую заметку.`;
+}
 
 export function toToolResult(e: unknown): { isError: true; content: [{ type: 'text'; text: string }] } {
   const text =
