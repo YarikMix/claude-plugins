@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Все команды — из каталога `plugins/apple-notes-folder/` рабочего дерева `/Users/y.mihalev/projects/tp-prepare/claude-plugins-apple-notes-folder`, если не сказано иное. Ветка `apple-notes-folder`.
+- Все команды — из каталога `plugins/apple-notes-folder/` рабочего дерева `<worktree>`, если не сказано иное. Ветка `apple-notes-folder`.
 - Имя плагина `apple-notes-folder`; ключ `userConfig` — `folder`; переменная окружения сервера — `NOTES_FOLDER`.
 - Имена инструментов ровно: `notes_list`, `notes_search`, `notes_read`, `notes_create`, `notes_append`, `notes_update`, `notes_delete`.
 - Runtime-зависимости только `@modelcontextprotocol/sdk`, `zod` (мажор 3), `marked`, `turndown`; версии точные (`--save-exact`). Dev: `typescript`, `esbuild`, `vitest`, `@types/node`, `@types/turndown`.
@@ -73,8 +73,8 @@ README.md (корень)               # Task 8: строка в таблице 
 - [ ] **Step 1: Создать каталог и служебные файлы**
 
 ```bash
-mkdir -p /Users/y.mihalev/projects/tp-prepare/claude-plugins-apple-notes-folder/plugins/apple-notes-folder/{src,test,scripts}
-cd /Users/y.mihalev/projects/tp-prepare/claude-plugins-apple-notes-folder/plugins/apple-notes-folder
+mkdir -p plugins/apple-notes-folder/{src,test,scripts}
+cd plugins/apple-notes-folder
 printf 'registry=https://registry.npmjs.org/\n' > .npmrc
 printf 'node_modules/\n' > .gitignore
 ```
@@ -2190,7 +2190,7 @@ Expected: все тесты PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/y.mihalev/projects/tp-prepare/claude-plugins-apple-notes-folder
+cd "$(git rev-parse --show-toplevel)"
 git add plugins/apple-notes-folder/.claude-plugin/plugin.json plugins/apple-notes-folder/hooks/hooks.json plugins/apple-notes-folder/README.md plugins/apple-notes-folder/LICENSE .claude-plugin/marketplace.json README.md
 git commit -m "feat(apple-notes-folder): манифест плагина, хук и запись в маркетплейсе"
 ```
@@ -2499,7 +2499,8 @@ Expected: всё зелёное, `dist совпадает со сборкой и
 
 ```bash
 git status --short
-grep -rnE 'verdaccio|devmail|claude-502|@corp' plugins/apple-notes-folder .claude-plugin README.md | grep -v node_modules || echo clean
+reg="$(npm config get registry)"
+grep -rF "$reg" plugins/apple-notes-folder .claude-plugin README.md | grep -v node_modules || echo clean
 grep -o '"resolved": "[^"]*"' plugins/apple-notes-folder/package-lock.json | grep -vc 'https://registry.npmjs.org/' || true
 ```
 
@@ -2551,9 +2552,8 @@ gh pr create -R YarikMix/claude-plugins --base main --head apple-notes-folder \
 
 - [ ] **Step 5: Прибрать рабочее дерево**
 
-После слияния, с подтверждения пользователя, из основного клона:
+После слияния, с подтверждения пользователя, из основного клона (уже находясь в нём):
 
 ```bash
-cd /Users/y.mihalev/projects/tp-prepare/claude-plugins
 git pull --ff-only && git worktree remove ../claude-plugins-apple-notes-folder && git branch -d apple-notes-folder
 ```
