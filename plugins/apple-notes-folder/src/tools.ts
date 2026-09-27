@@ -24,6 +24,8 @@ const IMAGES_HELP =
   'Картинка: ![подпись](/абсолютный/путь) — только файлы из /private/tmp/claude-<uid>/ (картинки, вставленные в промпт Claude Code, и scratchpad сессии); PNG, JPEG, GIF, HEIC или WebP до 10 МБ; в заметке она становится вложением. Путь с пробелами — в угловых скобках: ![](<путь>).';
 const ATTACHMENTS_RULE =
   'У заметки с вложениями (картинками, файлами) — отказ: Заметки портят вложения при любом изменении текста. Такую заметку можно только читать и удалять; новый текст и картинки — в новую заметку.';
+const LISTS_RULE =
+  'У заметки со списками — отказ: чек-листы в HTML заметок неотличимы от обычных списков, и запись текста стёрла бы их отметки. Такую заметку можно только читать и удалять; новый текст — в новую заметку.';
 const FORMATTING_NOTE =
   'Текст сохраняется; оформление, которого нет в Markdown (чек-листы, подчёркивание, цвета), может стать обычным текстом.';
 
@@ -89,7 +91,7 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_append',
-      description: `Дописать Markdown в конец заметки. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Дописать Markdown в конец заметки. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} ${LISTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: {},
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {
@@ -100,7 +102,7 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_update',
-      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} Заглушки ![…](note-image:N) во входе не принимаются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} ${LISTS_RULE} Заглушки ![…](note-image:N) во входе не принимаются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: { destructiveHint: true },
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {

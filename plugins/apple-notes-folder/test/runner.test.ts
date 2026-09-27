@@ -19,6 +19,12 @@ describe('mapOsaFailure', () => {
     expect(e.message).toBe(attachmentsMessage(3));
   });
 
+  it('списки: код LISTS с сообщением из спеки', () => {
+    const e = mapOsaFailure({}, 'execution error: Error: APN:LISTS (-2700)', true);
+    expect(e.code).toBe('LISTS');
+    expect(e.message).toBe(MESSAGES.LISTS);
+  });
+
   it('нет разрешения на автоматизацию', () => {
     const e = mapOsaFailure({}, 'execution error: Not authorized to send Apple events to Notes. (-1743)', false);
     expect(e.code).toBe('PERMISSION');

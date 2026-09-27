@@ -148,7 +148,7 @@ try {
   console.log(`--- notes_read(B) после создания ---\n${md.slice(0, 500)}\n---`);
   check('оформление сохранилось', md.includes('**жирный**'));
   check('без вложений строки о вложениях нет', !md.includes('Вложений в заметке'));
-  await call(c, 'notes_append', { id, markdown: '- пункт добавлен' });
+  await call(c, 'notes_append', { id, markdown: 'пункт добавлен' });
   md = (await call(c, 'notes_read', { id })).text;
   check('append дописал текст', md.includes('пункт добавлен'));
   const upd = await call(c, 'notes_update', { id, markdown: md.replace('**жирный**', '**изменён**') });
@@ -180,10 +180,30 @@ try {
   const appB2 = await call(c, 'notes_append', { id, markdown: 'ещё' });
   check('повторный notes_append(B) → отказ из-за вложений', isAttachmentsRefusal(appB2), appB2.text);
 
+  // 5. Заметка D со списком: чек-листы неотличимы от обычных списков в HTML — правка отказывает, текст цел.
+  const createdD = await call(c, 'notes_create', { title: 'Проверка списка', markdown: '- раз\n- два' });
+  check('notes_create(D) со списком', !createdD.isError, createdD.text);
+  const idD = JSON.parse(createdD.text).id;
+  const isListsRefusal = (r) => r.isError && r.text.includes('списки');
+  const appD = await call(c, 'notes_append', { id: idD, markdown: 'ещё' });
+  check('notes_append(D) → отказ из-за списка', isListsRefusal(appD), appD.text);
+  const updD = await call(c, 'notes_update', { id: idD, markdown: '# Проверка списка\n\nзамена' });
+  check('notes_update(D) → отказ из-за списка', isListsRefusal(updD), updD.text);
+  md = (await call(c, 'notes_read', { id: idD })).text;
+  check(
+    'текст D не изменился после отказов',
+    md.includes('раз') && md.includes('два') && !md.includes('ещё') && !md.includes('замена'),
+    md,
+  );
+
   // 6. Список — только своя заметка (вложенная папка не входит).
   const list = JSON.parse((await call(c, 'notes_list', { limit: 200 })).text);
   const listed = list.notes.map((n) => n.id).sort();
-  check('список: только свои заметки', list.total === 3 && JSON.stringify(listed) === JSON.stringify([id, idA, idC].sort()), `total=${list.total}`);
+  check(
+    'список: только свои заметки',
+    list.total === 4 && JSON.stringify(listed) === JSON.stringify([id, idA, idC, idD].sort()),
+    `total=${list.total}`,
+  );
 
   // 7. Чужая и вложенная папки — отказ без названия заметки.
   for (const [label, nid] of [
@@ -211,6 +231,8 @@ try {
   check('notes_delete заметки с вложением', !delA.isError, delA.text);
   const delC = await call(c, 'notes_delete', { id: idC });
   check('notes_delete(C)', !delC.isError, delC.text);
+  const delD = await call(c, 'notes_delete', { id: idD });
+  check('notes_delete(D)', !delD.isError, delD.text);
   const gone = await call(c, 'notes_read', { id });
   check('удалённая заметка недоступна', gone.isError, gone.text);
 

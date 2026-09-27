@@ -9,7 +9,7 @@ import { makeTools } from './tools.js';
 const run = makeOsascriptRunner();
 const getScope = makeScopeProvider(configuredFolder(process.env), run);
 
-const server = new McpServer({ name: 'apple-notes-folder', version: '1.0.0' });
+const server = new McpServer({ name: 'apple-notes-folder', version: '1.1.0' });
 
 for (const tool of makeTools({ getScope, run, imageSrc: (p) => imageSrc(p) })) {
   server.registerTool(

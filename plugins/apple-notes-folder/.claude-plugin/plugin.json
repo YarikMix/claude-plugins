@@ -1,6 +1,6 @@
 {
   "name": "apple-notes-folder",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP-сервер Apple Notes, ограниченный одной папкой: чтение, поиск, создание, правка, удаление, картинки",
   "author": { "name": "Yaroslav Mihalev" },
   "license": "MIT",
