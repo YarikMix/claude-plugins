@@ -35,14 +35,33 @@ describe('SCRIPTS', () => {
     for (const s of [SCRIPTS.appendNote, SCRIPTS.updateNote]) {
       const run = s.slice(s.indexOf('function run('));
       const guardAt = run.indexOf(GUARD_CALL);
+      const bodyAt = run.indexOf('var b = n.body();');
       const checkAt = run.indexOf('attachmentCount(n)');
-      const failAt = run.indexOf("fail('ATTACHMENTS:' + k)");
+      const failAt = run.indexOf("fail('ATTACHMENTS:' + Math.max(k, 1))");
       const writeAt = run.indexOf('n.body =');
       expect(guardAt).toBeGreaterThan(-1);
+      expect(bodyAt).toBeGreaterThan(guardAt);
       expect(checkAt).toBeGreaterThan(guardAt);
-      expect(failAt).toBeGreaterThan(checkAt);
+      expect(failAt).toBeGreaterThan(Math.max(bodyAt, checkAt));
       expect(writeAt).toBeGreaterThan(failAt);
+      // Свежая картинка может быть ещё не посчитана во вложениях — отказ и по её следу в теле.
+      const cond = run.slice(run.indexOf('if (k > 0'), failAt);
+      expect(cond).toContain('/<img\\b/i.test(b)');
+      expect(cond).toContain("b.indexOf('\\uFFFC') !== -1");
+      // Тело читается один раз, до проверки; запись не читает его заново.
+      expect(run.slice(writeAt)).not.toContain('n.body()');
     }
+  });
+
+  it('проверка по телу реально срабатывает на <img> и U+FFFC', () => {
+    const src = SCRIPTS.appendNote;
+    const cond = src.slice(src.indexOf('if (k > 0'), src.indexOf(") fail('ATTACHMENTS:"));
+    const test = new Function('k', 'b', `return ${cond.slice(cond.indexOf('(') + 1)};`) as (k: number, b: string) => boolean;
+    expect(test(0, '<div>текст</div>')).toBe(false);
+    expect(test(0, '<div><IMG src="x"></div>')).toBe(true);
+    expect(test(0, '<div>\uFFFC</div>')).toBe(true);
+    expect(test(1, '')).toBe(true);
+    expect(test(0, '<div>imgur</div>')).toBe(false);
   });
 
   it('число вложений считается по id без повторов', () => {

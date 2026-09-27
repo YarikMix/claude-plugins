@@ -25,6 +25,8 @@ function guardNote(folderId, noteId) {
   if (n.passwordProtected()) fail('LOCKED');
   return n;
 }
+// Вложения заметки. Только что записанную картинку Заметки могут ещё не показать в attachments,
+// поэтому скрипты записи дополнительно отказывают по её следу в теле (<img> или символ вложения U+FFFC).
 function attachmentCount(n) {
   // Свежее вложение Заметки иногда отдают в списке дважды — считаем по id без повторов.
   var ids = n.attachments.id(), seen = {}, k = 0;
@@ -102,9 +104,10 @@ const appendNote =
   `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var b = n.body();
   var k = attachmentCount(n);
-  if (k > 0) fail('ATTACHMENTS:' + k);
-  n.body = n.body() + readFile(argv[2]);
+  if (k > 0 || /<img\\b/i.test(b) || b.indexOf('\\uFFFC') !== -1) fail('ATTACHMENTS:' + Math.max(k, 1));
+  n.body = b + readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;
 
@@ -113,8 +116,9 @@ const updateNote =
   `
 function run(argv) {
   var n = ${GUARD_CALL};
+  var b = n.body();
   var k = attachmentCount(n);
-  if (k > 0) fail('ATTACHMENTS:' + k);
+  if (k > 0 || /<img\\b/i.test(b) || b.indexOf('\\uFFFC') !== -1) fail('ATTACHMENTS:' + Math.max(k, 1));
   n.body = readFile(argv[2]);
   return JSON.stringify({ id: n.id() });
 }`;

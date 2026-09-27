@@ -127,6 +127,17 @@ try {
     JSON.stringify(st),
   );
 
+  // 1a. Заметка C: дописывание сразу после создания с картинкой, без ожидания — Заметки могут ещё не
+  // посчитать вложение, отказ должен сработать и по следу картинки в теле.
+  const createdC = await call(c, 'notes_create', { title: 'Проверка сразу', markdown: `![](<${png}>)` });
+  check('notes_create(C) с картинкой', !createdC.isError, createdC.text);
+  const idC = JSON.parse(createdC.text).id;
+  const appC = await call(c, 'notes_append', { id: idC, markdown: 'текст' });
+  check('notes_append(C) сразу после создания → отказ из-за вложений', isAttachmentsRefusal(appC), appC.text);
+  st = await stateOf(idC, { attachments: 1, img: 1 });
+  md = (await call(c, 'notes_read', { id: idC })).text;
+  check('у C ровно 1 вложение, текст не дописан', st.attachments === 1 && st.img === 1 && !md.includes('текст'), JSON.stringify(st));
+
   // 2. Заметка B без картинок: заголовок, оформление, дописывание, замена.
   const created = await call(c, 'notes_create', { title: 'Проверка связи', markdown: 'Текст **жирный**' });
   check('notes_create', !created.isError, created.text);
@@ -172,7 +183,7 @@ try {
   // 6. Список — только своя заметка (вложенная папка не входит).
   const list = JSON.parse((await call(c, 'notes_list', { limit: 200 })).text);
   const listed = list.notes.map((n) => n.id).sort();
-  check('список: только свои заметки', list.total === 2 && JSON.stringify(listed) === JSON.stringify([id, idA].sort()), `total=${list.total}`);
+  check('список: только свои заметки', list.total === 3 && JSON.stringify(listed) === JSON.stringify([id, idA, idC].sort()), `total=${list.total}`);
 
   // 7. Чужая и вложенная папки — отказ без названия заметки.
   for (const [label, nid] of [
@@ -198,6 +209,8 @@ try {
   check('notes_delete', !del.isError, del.text);
   const delA = await call(c, 'notes_delete', { id: idA });
   check('notes_delete заметки с вложением', !delA.isError, delA.text);
+  const delC = await call(c, 'notes_delete', { id: idC });
+  check('notes_delete(C)', !delC.isError, delC.text);
   const gone = await call(c, 'notes_read', { id });
   check('удалённая заметка недоступна', gone.isError, gone.text);
 
