@@ -1,7 +1,7 @@
-import { pathToFileURL } from 'node:url';
-
 const SCRIPTING = /osascript|applescript|jxa|scriptingbridge/i;
-const NOTES = /notes/i;
+// Упоминание "Notes" только как имя приложения в кавычках (одинарных/двойных/обратных, кавычка может быть
+// экранирована обратным слэшем перед закрывающей) — либо bundle id, либо файл базы; не голое слово "notes".
+const NOTES = /(["'`])notes\\?\1|com\.apple\.notes|notestore/i;
 const SQLITE = /sqlite/i;
 const NOTESTORE = /notestore/i;
 
@@ -13,22 +13,17 @@ export function shouldDeny(command: string): boolean {
   return (SCRIPTING.test(command) && NOTES.test(command)) || (SQLITE.test(command) && NOTESTORE.test(command));
 }
 
-async function main(): Promise<void> {
-  let input = '';
-  for await (const chunk of process.stdin) input += chunk;
+/** Чистая логика хука: JSON отказа для запрещённого вызова Bash, иначе пустая строка. Без сайд-эффектов. */
+export function hookOutput(input: string): string {
   let command = '';
   try {
     const call = JSON.parse(input);
     if (call?.tool_name === 'Bash') command = String(call?.tool_input?.command ?? '');
   } catch {
-    return;
+    return '';
   }
-  if (!shouldDeny(command)) return;
-  process.stdout.write(
-    JSON.stringify({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: DENY_REASON },
-    }),
-  );
+  if (!shouldDeny(command)) return '';
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: DENY_REASON },
+  });
 }
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

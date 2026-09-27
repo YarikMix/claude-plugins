@@ -1,13 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { shouldDeny, DENY_REASON } from '../src/hook.js';
+import { shouldDeny, hookOutput, DENY_REASON } from '../src/hook.js';
 
 const DENY = [
   `osascript -e 'tell application "Notes" to get name of every note'`,
   `osascript -l JavaScript -e "Application('Notes').notes()"`,
   `sqlite3 ~/Library/Group\\ Containers/group.com.apple.notes/NoteStore.sqlite 'select 1'`,
   'echo x | OSASCRIPT - com.apple.Notes',
+  `osascript -e "tell application \\"Notes\\" to get name of every note"`,
+  `osascript <<'EOF'
+tell application "Notes" to count notes
+EOF`,
+  `osascript -e 'tell application id "com.apple.Notes" to count notes'`,
 ];
 const ALLOW = [
   'git log --oneline',
@@ -15,11 +23,36 @@ const ALLOW = [
   `osascript -e 'display dialog "hi"'`,
   'npm test',
   'sqlite3 app.db .tables',
+  'cat .superpowers/sdd/x/apple-notes-folder-brief.md | grep osascript',
+  'git commit -m "feat(apple-notes-folder): osascript runner for Notes"',
 ];
+
+const DENY_JSON = {
+  hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: DENY_REASON },
+};
 
 describe('shouldDeny', () => {
   it.each(DENY)('отклоняет: %s', (c) => expect(shouldDeny(c)).toBe(true));
   it.each(ALLOW)('пропускает: %s', (c) => expect(shouldDeny(c)).toBe(false));
+});
+
+describe('hookOutput', () => {
+  it('возвращает JSON отказа для запрещённого вызова Bash', () => {
+    const out = hookOutput(JSON.stringify({ tool_name: 'Bash', tool_input: { command: DENY[0] } }));
+    expect(JSON.parse(out)).toEqual(DENY_JSON);
+  });
+
+  it('возвращает пустую строку для обычной команды', () => {
+    expect(hookOutput(JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } }))).toBe('');
+  });
+
+  it('возвращает пустую строку для не-JSON на входе', () => {
+    expect(hookOutput('не json')).toBe('');
+  });
+
+  it('возвращает пустую строку для пустого входа', () => {
+    expect(hookOutput('')).toBe('');
+  });
 });
 
 describe('dist/hook.js', () => {
@@ -29,9 +62,7 @@ describe('dist/hook.js', () => {
   it('печатает отказ для обхода через Bash', () => {
     const r = run(JSON.stringify({ tool_name: 'Bash', tool_input: { command: DENY[0] } }));
     expect(r.status).toBe(0);
-    expect(JSON.parse(r.stdout)).toEqual({
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: DENY_REASON },
-    });
+    expect(JSON.parse(r.stdout)).toEqual(DENY_JSON);
   });
 
   it('молчит для обычной команды и мусора на входе', () => {
@@ -39,6 +70,22 @@ describe('dist/hook.js', () => {
       const r = run(input);
       expect(r.status).toBe(0);
       expect(r.stdout).toBe('');
+    }
+  });
+
+  it('срабатывает при запуске через симлинк', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'apple-notes-folder-hook-'));
+    try {
+      const link = join(dir, 'x.js');
+      await symlink(HOOK, link);
+      const r = spawnSync(process.execPath, [link], {
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: DENY[0] } }),
+        encoding: 'utf8',
+      });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual(DENY_JSON);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
