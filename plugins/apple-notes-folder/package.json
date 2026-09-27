@@ -9,6 +9,9 @@
     "node": ">=20"
   },
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "verify-build": "node scripts/verify-build.mjs",
+    "pretest": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
