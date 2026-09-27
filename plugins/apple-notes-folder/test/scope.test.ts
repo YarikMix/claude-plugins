@@ -62,6 +62,16 @@ describe('resolveScope', () => {
       /не найдена/,
     );
   });
+
+  it('«Недавно удалённые» как разрешённая папка — отказ без обращения к Заметкам', async () => {
+    const run: Runner = async () => {
+      throw new Error('не должен вызываться');
+    };
+    for (const name of ['Recently Deleted', '  recently deleted  ', 'Недавно удалённые', 'Недавно удаленные', 'НЕДАВНО УДАЛЁННЫЕ']) {
+      await expect(resolveScope(name, run)).rejects.toMatchObject({ code: 'CONFIG' });
+      await expect(resolveScope(name, run)).rejects.toThrow(/нельзя выбрать/);
+    }
+  });
 });
 
 describe('makeScopeProvider', () => {

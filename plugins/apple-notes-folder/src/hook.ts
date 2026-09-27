@@ -1,7 +1,9 @@
 const SCRIPTING = /osascript|applescript|jxa|scriptingbridge/i;
-// Упоминание "Notes" только как имя приложения в кавычках (одинарных/двойных/обратных, кавычка может быть
-// экранирована обратным слэшем перед закрывающей) — либо bundle id, либо файл базы; не голое слово "notes".
-const NOTES = /(["'`])notes\\?\1|com\.apple\.notes|notestore/i;
+// Упоминание "Notes" как имя приложения в кавычках (одинарных/двойных/обратных, кавычка может быть
+// экранирована обратным слэшем перед закрывающей), с необязательным путём перед именем и необязательным
+// ".app" после него (`"Notes"`, `"Notes.app"`, `"/System/Applications/Notes.app"`) — либо bundle id, либо
+// файл базы; не голое слово "notes".
+const NOTES = /(["'`])(?:[^"'`]*\/)?notes(?:\.app)?\\?\1|com\.apple\.notes|notestore/i;
 const SQLITE = /sqlite/i;
 const NOTESTORE = /notestore/i;
 
@@ -13,12 +15,15 @@ export function shouldDeny(command: string): boolean {
   return (SCRIPTING.test(command) && NOTES.test(command)) || (SQLITE.test(command) && NOTESTORE.test(command));
 }
 
-/** Чистая логика хука: JSON отказа для запрещённого вызова Bash, иначе пустая строка. Без сайд-эффектов. */
+/**
+ * Чистая логика хука: JSON отказа для запрещённого вызова Bash/Monitor, иначе пустая строка. Без сайд-эффектов.
+ * Monitor (инструмент наблюдения за фоновым процессом Claude Code) тоже несёт shell-команду в tool_input.command.
+ */
 export function hookOutput(input: string): string {
   let command = '';
   try {
     const call = JSON.parse(input);
-    if (call?.tool_name === 'Bash') command = String(call?.tool_input?.command ?? '');
+    if (call?.tool_name === 'Bash' || call?.tool_name === 'Monitor') command = String(call?.tool_input?.command ?? '');
   } catch {
     return '';
   }

@@ -1,9 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, writeFile, symlink, rm, mkdir, truncate, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { imageSrc, sniffImageMime, MAX_IMAGE_BYTES, defaultImageRoot } from '../src/images.js';
+
+// Подмена node:fs/promises целиком (Vitest не даёт spyOn на именованный экспорт ESM-модуля —
+// "Module namespace is not configurable"). realpathHolder.impl по умолчанию — настоящий realpath;
+// один тест временно подменяет его, чтобы смоделировать гонку между lstat и realpath в src/images.ts.
+const realpathHolder = vi.hoisted(() => ({ impl: null as unknown as typeof import('node:fs/promises').realpath }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  realpathHolder.impl = actual.realpath;
+  return { ...actual, realpath: (...args: Parameters<typeof actual.realpath>) => realpathHolder.impl(...args) };
+});
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const JPEG = Buffer.from('ffd8ffe000104a464946', 'hex');
@@ -93,5 +104,20 @@ describe('imageSrc', () => {
 
   it('корень по умолчанию — временная папка Claude Code текущего пользователя', () => {
     expect(defaultImageRoot()).toBe(`/private/tmp/claude-${process.getuid!()}`);
+  });
+
+  it('гонка: файл исчезает между lstat и realpath — понятная ошибка IMAGE «файл не найден», не падение процесса', async () => {
+    const p = join(root, 'a.png');
+    const trueRealpath = realpathHolder.impl;
+    realpathHolder.impl = (async (arg: string) => {
+      if (arg === p) throw Object.assign(new Error('ENOENT: race'), { code: 'ENOENT' });
+      return trueRealpath(arg);
+    }) as typeof realpath;
+    try {
+      await expect(imageSrc(p, root)).rejects.toMatchObject({ code: 'IMAGE' });
+      await expect(imageSrc(p, root)).rejects.toThrow(/не найден/);
+    } finally {
+      realpathHolder.impl = trueRealpath;
+    }
   });
 });

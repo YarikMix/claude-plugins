@@ -19,8 +19,13 @@ export function configuredFolder(env: NodeJS.ProcessEnv): string | null {
   return v;
 }
 
+const RECENTLY_DELETED_NAMES = new Set(['recently deleted', 'недавно удалённые', 'недавно удаленные']);
+
 export async function resolveScope(name: string | null, run: Runner): Promise<Scope> {
   if (!name) throw new ToolError('CONFIG', `Не задана папка Заметок. Укажите её: ${CONFIGURE_HINT}.`);
+  if (RECENTLY_DELETED_NAMES.has(name.trim().toLowerCase())) {
+    throw new ToolError('CONFIG', `Папку «${name}» нельзя выбрать: в ней лежат удалённые заметки из всех папок.`);
+  }
 
   const byId = new Map<string, FolderInfo>();
   for (const f of JSON.parse(await run(SCRIPTS.listFolders, [], { write: false })) as FolderInfo[]) byId.set(f.id, f);

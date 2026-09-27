@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { makeTools } from '../src/tools.js';
 import { SCRIPTS } from '../src/scripts.js';
 import { MESSAGES, ToolError, attachmentsMessage } from '../src/errors.js';
-import { titleHtml, MAX_MARKDOWN_CHARS } from '../src/markdown.js';
+import { titleHtml, MAX_MARKDOWN_CHARS, TRUNCATION_MARKER_PREFIX } from '../src/markdown.js';
 import type { Runner } from '../src/runner.js';
 
 interface FakeNote {
@@ -287,6 +287,18 @@ describe('запись', () => {
     const before = notes.N1.body;
     await expect(tool('notes_update')({ id: 'N1', markdown: '![](note-image:5)' })).rejects.toMatchObject({
       code: 'IMAGE_REF',
+    });
+    expect(calls.filter((c) => c.script === SCRIPTS.updateNote)).toHaveLength(0);
+    expect(notes.N1.body).toBe(before);
+  });
+
+  it('notes_update: тело с пометкой обрезки notes_read — отказ TRUNCATED до записи, тело не меняется', async () => {
+    const { tool, calls, notes } = setup();
+    const before = notes.N1.body;
+    const markdown = `Заголовок\n\nтекст${TRUNCATION_MARKER_PREFIX} ${MAX_MARKDOWN_CHARS} символов]`;
+    await expect(tool('notes_update')({ id: 'N1', markdown })).rejects.toMatchObject({
+      code: 'TRUNCATED',
+      message: MESSAGES.TRUNCATED,
     });
     expect(calls.filter((c) => c.script === SCRIPTS.updateNote)).toHaveLength(0);
     expect(notes.N1.body).toBe(before);

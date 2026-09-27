@@ -3,6 +3,8 @@ import { Marked, type Tokens } from 'marked';
 import { ToolError } from './errors.js';
 
 export const MAX_MARKDOWN_CHARS = 200_000;
+/** Начало пометки, которой htmlToMarkdown отмечает обрезанный текст (без числа лимита). */
+export const TRUNCATION_MARKER_PREFIX = '[… обрезано: заметка длиннее';
 
 const IMG_TAG = /<img\b[^>]*>/gi;
 const SRC_ATTR = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
@@ -44,22 +46,19 @@ export function htmlToMarkdown(html: string, maxChars: number = MAX_MARKDOWN_CHA
   const { html: stripped, images } = extractImages(html);
   let markdown = makeTurndown().turndown(stripped).trim();
   if (markdown.length > maxChars) {
-    const marker = `\n\n[… обрезано: заметка длиннее ${maxChars} символов]`;
+    const marker = `\n\n${TRUNCATION_MARKER_PREFIX} ${maxChars} символов]`;
     markdown = markdown.slice(0, maxChars - marker.length) + marker;
   }
   return { markdown, images };
 }
 
-export function makeResolver(existing: string[] | null, load: (path: string) => Promise<string>): ImageResolver {
+/** note-image:N всегда отклоняется: заглушки принимает только чтение (notes_read), запись их не разрешает. */
+export function makeResolver(load: (path: string) => Promise<string>): ImageResolver {
   return async (href) => {
-    const m = PLACEHOLDER.exec(href);
-    if (!m) return load(href);
-    const n = Number(m[1]);
-    if (!existing || n < 1 || n > existing.length) {
-      const has = existing ? ` (в заметке картинок: ${existing.length})` : '';
-      throw new ToolError('IMAGE_REF', `Ссылка ${href} не соответствует ни одной картинке заметки${has}.`);
+    if (PLACEHOLDER.test(href)) {
+      throw new ToolError('IMAGE_REF', `Ссылка ${href} не соответствует ни одной картинке заметки.`);
     }
-    return existing[n - 1];
+    return load(href);
   };
 }
 

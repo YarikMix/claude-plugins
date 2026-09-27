@@ -16,6 +16,8 @@ const DENY = [
 tell application "Notes" to count notes
 EOF`,
   `osascript -e 'tell application id "com.apple.Notes" to count notes'`,
+  `osascript -e 'tell application "Notes.app" to count notes'`,
+  `osascript -e 'tell application "/System/Applications/Notes.app" to count notes'`,
 ];
 const ALLOW = [
   'git log --oneline',
@@ -52,6 +54,19 @@ describe('hookOutput', () => {
 
   it('возвращает пустую строку для пустого входа', () => {
     expect(hookOutput('')).toBe('');
+  });
+
+  it('Monitor тоже несёт shell-команду в tool_input.command — запрещённая отклоняется', () => {
+    const out = hookOutput(JSON.stringify({ tool_name: 'Monitor', tool_input: { command: DENY[0] } }));
+    expect(JSON.parse(out)).toEqual(DENY_JSON);
+  });
+
+  it('Monitor с обычной командой — пустая строка', () => {
+    expect(hookOutput(JSON.stringify({ tool_name: 'Monitor', tool_input: { command: 'ls' } }))).toBe('');
+  });
+
+  it('не-shell инструмент (например, Read с {file_path}) — пустая строка', () => {
+    expect(hookOutput(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: DENY[0] } }))).toBe('');
   });
 });
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { MAX_MARKDOWN_CHARS, htmlToMarkdown, makeResolver, markdownToHtml, titleHtml } from './markdown.js';
+import { MESSAGES, ToolError } from './errors.js';
+import { MAX_MARKDOWN_CHARS, TRUNCATION_MARKER_PREFIX, htmlToMarkdown, makeResolver, markdownToHtml, titleHtml } from './markdown.js';
 import { NotesService, type NoteSummary } from './notes.js';
 import type { Runner } from './runner.js';
 import type { Scope } from './scope.js';
@@ -23,6 +24,8 @@ const IMAGES_HELP =
   'Картинка: ![подпись](/абсолютный/путь) — только файлы из /private/tmp/claude-<uid>/ (картинки, вставленные в промпт Claude Code, и scratchpad сессии); PNG, JPEG, GIF, HEIC или WebP до 10 МБ; в заметке она становится вложением. Путь с пробелами — в угловых скобках: ![](<путь>).';
 const ATTACHMENTS_RULE =
   'У заметки с вложениями (картинками, файлами) — отказ: Заметки портят вложения при любом изменении текста. Такую заметку можно только читать и удалять; новый текст и картинки — в новую заметку.';
+const FORMATTING_NOTE =
+  'Текст сохраняется; оформление, которого нет в Markdown (чек-листы, подчёркивание, цвета), может стать обычным текстом.';
 
 export function attachmentsLine(n: number): string {
   return `\n\n[Вложений в заметке: ${n} — их содержимое сервер не показывает]`;
@@ -34,7 +37,7 @@ const json = (v: unknown) => JSON.stringify(v, null, 2);
 export function makeTools(deps: ToolDeps): ToolDef[] {
   const service = async () => new NotesService(deps.run, (await deps.getScope()).folderId);
   const noteId = z.string().min(1).describe('id заметки из notes_list или notes_search');
-  const newImages = () => makeResolver(null, deps.imageSrc);
+  const newImages = () => makeResolver(deps.imageSrc);
 
   return [
     {
@@ -86,7 +89,7 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_append',
-      description: `Дописать Markdown в конец заметки; существующий текст не меняется. ${ATTACHMENTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Дописать Markdown в конец заметки. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: {},
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {
@@ -97,10 +100,11 @@ export function makeTools(deps: ToolDeps): ToolDef[] {
     },
     {
       name: 'notes_update',
-      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. ${ATTACHMENTS_RULE} Заглушки ![…](note-image:N) во входе не принимаются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
+      description: `Заменить текст заметки целиком — в формате notes_read, с заголовком первой строкой. ${FORMATTING_NOTE} ${ATTACHMENTS_RULE} Заглушки ![…](note-image:N) во входе не принимаются. ${IMAGES_HELP} ${SCOPE_NOTE}`,
       shape: { id: noteId, markdown: z.string().min(1) },
       annotations: { destructiveHint: true },
       handler: async ({ id, markdown }: { id: string; markdown: string }) => {
+        if (markdown.includes(TRUNCATION_MARKER_PREFIX)) throw new ToolError('TRUNCATED', MESSAGES.TRUNCATED);
         const html = await markdownToHtml(markdown, newImages());
         await (await service()).update(id, html);
         return json({ id });

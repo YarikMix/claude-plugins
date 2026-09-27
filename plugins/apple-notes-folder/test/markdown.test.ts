@@ -92,30 +92,23 @@ describe('markdownToHtml', () => {
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
 
-  it('новая картинка встраивается через load', async () => {
-    const load = async (p: string) => (p === '/private/tmp/claude-1/x.png' ? 'data:image/png;base64,NEW' : 'bad');
-    const html = await markdownToHtml('![](/private/tmp/claude-1/x.png)', makeResolver(null, load));
-    expect(html).toContain('<img src="data:image/png;base64,NEW">');
+  it('новая картинка встраивается через load — как file:// (Заметки не показывают data: нормально)', async () => {
+    const load = async (p: string) =>
+      p === '/private/tmp/claude-1/x.png' ? 'file:///private/tmp/claude-1/real.png' : 'bad';
+    const html = await markdownToHtml('![](/private/tmp/claude-1/x.png)', makeResolver(load));
+    expect(html).toContain('<img src="file:///private/tmp/claude-1/real.png">');
   });
 
   it('src картинки экранируется', async () => {
-    const html = await markdownToHtml('![](/p.png)', makeResolver(null, async () => 'file:///a"b<c>&d'));
+    const html = await markdownToHtml('![](/p.png)', makeResolver(async () => 'file:///a"b<c>&d'));
     expect(html).toContain('<img src="file:///a&quot;b&lt;c&gt;&amp;d">');
   });
 
-  it('update: оставленная заглушка возвращает картинку, убранная — удаляет', async () => {
-    const { markdown, images } = htmlToMarkdown(WITH_IMAGES);
-    const edited = markdown.replace('![картинка 1](note-image:1)', '');
-    const html = await markdownToHtml(edited, makeResolver(images, noLoad));
-    expect(html).toContain('<img src="data:image/png;base64,BBBB">');
-    expect(html).not.toContain('AAAA');
-  });
-
-  it('заглушка без картинки — ошибка IMAGE_REF', async () => {
-    await expect(markdownToHtml('![](note-image:3)', makeResolver(['data:x'], noLoad))).rejects.toMatchObject({
+  it('заглушка note-image:N во входе записи — всегда ошибка IMAGE_REF (заглушки принимает только чтение)', async () => {
+    await expect(markdownToHtml('![](note-image:3)', makeResolver(noLoad))).rejects.toMatchObject({
       code: 'IMAGE_REF',
     });
-    await expect(markdownToHtml('![](note-image:1)', makeResolver(null, noLoad))).rejects.toMatchObject({
+    await expect(markdownToHtml('![](note-image:1)', makeResolver(noLoad))).rejects.toMatchObject({
       code: 'IMAGE_REF',
     });
   });

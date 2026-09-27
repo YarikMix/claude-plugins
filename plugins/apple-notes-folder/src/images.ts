@@ -37,7 +37,8 @@ export async function imageSrc(path: string, root: string = defaultImageRoot()):
   if (!st.isFile()) throw fail('это не обычный файл');
 
   const realRoot = await realpath(root).catch(() => null);
-  const real = await realpath(path);
+  const real = await realpath(path).catch(() => null);
+  if (!real) throw fail('файл не найден');
   if (!realRoot || !real.startsWith(realRoot + sep)) throw fail(`файл должен лежать в ${root}`);
 
   if (st.size > MAX_IMAGE_BYTES) throw fail('файл больше 10 МБ');
