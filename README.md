@@ -38,7 +38,6 @@ Codex — `$apple-notes-folder:setup`.
 | Плагин | Возможности | Клиенты |
 |---|---|---|
 | [figma-ops](plugins/figma-ops/README.md) | Figma context dossier, design-system bindings, annotations/prototype, поиск текста, полные обсуждения и проверенный экспорт через MCP/REST | Claude Code, Codex |
-| [figma-lookup](plugins/figma-lookup/README.md) | Совместимое имя Figma Ops с автономными runtime и skill | Claude Code, Codex |
 | [peekaboo-control](plugins/peekaboo-control/README.md) | Управление macOS через Peekaboo MCP и Desktop Bridge | Claude Code, Codex |
 | [phone-control](plugins/phone-control/README.md) | Управление физическими iPhone и Android через Appium MCP; настройка Android | Claude Code, Codex |
 | [setup-iphone-control](plugins/setup-iphone-control/README.md) | Настройка Appium MCP и подписи WDA на Mac | Claude Code, Codex |
@@ -85,8 +84,10 @@ Figma Ops использует уже подключённый Figma MCP; REST C
 системный curl и существующий `FIGMA_TOKEN` либо macOS Keychain `figma-rest/figma`.
 REST необязателен для MCP. Для недоступных другим путём UI-задач можно использовать
 `peekaboo-control`; подключение MCP и системные разрешения настраиваются отдельно.
-Старое имя `figma-lookup` остаётся рабочим без установки соседнего плагина.
-Figma Ops 1.2.0 и Figma Lookup 1.3.0 дают один workflow: точный source/context,
+Figma Ops 1.4.1 заменяет снятый с поддержки `figma-lookup`: установите
+`figma-ops@yarikmix-plugins` и удалите прежний плагин в своём клиенте.
+Прежний вызов замените на `$figma-ops:figma-ops` в Codex или
+`/figma-ops:figma-ops` в Claude Code. Возможности сохраняются: точный source/context,
 явный root при расширении, scoped components/styles/variable bindings,
 annotations/prototype и отдельные MCP definitions/motion evidence.
 `bindings` читает source один раз; optional `--with-variables` добавляет один

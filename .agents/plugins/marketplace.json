@@ -120,7 +120,7 @@
     },
     {
       "name": "figma-ops",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source": {
         "source": "local",
         "path": "./plugins/figma-ops"
@@ -131,20 +131,6 @@
         "authentication": "ON_INSTALL"
       },
       "description": "Read-only Figma: точный live scope через Southleft Bridge, official design/motion tools и автономный REST CLI"
-    },
-    {
-      "name": "figma-lookup",
-      "version": "1.5.0",
-      "source": {
-        "source": "local",
-        "path": "./plugins/figma-lookup"
-      },
-      "category": "Productivity",
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "description": "Совместимое имя Figma Ops: точный Southleft/official MCP routing и автономный read-only REST CLI"
     }
   ]
 }
