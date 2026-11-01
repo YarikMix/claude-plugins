@@ -2,7 +2,7 @@
 
 Read-only работа с Figma для Claude Code и Codex: поиск экранов и текста,
 предки нод, annotations, prototype actions, context dossier, полные обсуждения
-и проверенный экспорт. Версия 1.4.0 выбирает маршрут между Southleft Bridge, официальным Figma MCP
+и проверенный экспорт. Версия 1.4.1 выбирает маршрут между Southleft Bridge, официальным Figma MCP
 и автономным REST CLI по задаче. Плагин добавляет skill и сохраняет 11 CLI
 операций; MCP-серверы подключаются отдельно, manifests их не устанавливают.
 
@@ -18,8 +18,16 @@ codex plugin add figma-ops@yarikmix-plugins
 
 Skill [figma-ops](skills/figma-ops/SKILL.md) доступен по имени плагина/скилла
 и автоматически для подходящих задач. Manifests обоих хостов указывают
-`./skills/`. `figma-lookup` 1.5.0 сохраняет прежнее имя и тот же workflow;
-для новой установки достаточно одного из имён. Каждый plugin root автономен.
+`./skills/`. Plugin root автономен.
+
+### Переход со старого имени
+
+Плагин `figma-lookup` удалён из каталога и больше не обновляется. Если он был
+установлен, установите `figma-ops@yarikmix-plugins` командами выше, затем удалите
+прежний плагин средствами своего клиента. Старый вызов замените на
+`$figma-ops:figma-ops` в Codex или `/figma-ops:figma-ops` в Claude Code;
+в собственных инструкциях и ссылках на CLI замените plugin root на `figma-ops`.
+Все возможности перенесены; повторно настраивать MCP и REST-доступ не требуется.
 
 ## Маршруты
 
@@ -166,26 +174,21 @@ CLI не собирает: `not_collected` не означает недосту�
 [context](skills/figma-ops/references/context.md),
 [bindings](skills/figma-ops/references/bindings.md).
 
-## Разработка и совместимость
+## Разработка
 
 Канонический код и skill находятся в этом плагине. В репозитории после
 изменений выполни:
 
 ```sh
-python3 plugins/figma-ops/scripts/sync-compat.py
 python3 -m unittest discover -s plugins/figma-ops/tests -v
 ```
 
-`sync-compat.py` — инструмент сопровождения репозитория: копирует runtime
-`.py`, references и тело skill в соседний `figma-lookup`, меняет только
-frontmatter имени/совместимости. Tests и сам sync tool не копируются.
-Установленный CLI не вызывает sync и не зависит от соседнего plugin root.
-Packaging tests проверяют оба marketplace/manifests, локальные references,
-точность копий и все 11 операций/12 help calls в каждом из двух отдельных
-установленных roots из cwd с пробелами: 22 базовые операции, 24 help calls и 12 дополнительных enrichment/partial/context cases.
-Отдельно проверяются 6 standalone asset helper cases и 2 helper help calls.
-Runtime в каждом root: 16 модулей и 8 references; test harness и sync tool
-не входят в installed runtime. Это файловые и synthetic transport проверки; они не заменяют проверку
+Установленный CLI не зависит от соседнего plugin root.
+Packaging tests проверяют оба marketplace/manifests, локальные references
+и автономную установку из cwd с пробелами: 11 базовых операций, 12 help calls
+и 6 дополнительных enrichment/partial/context cases.
+Отдельно проверяются 3 standalone asset helper cases и 1 helper help call.
+Runtime: 16 модулей и 8 references. Это файловые и synthetic transport проверки; они не заменяют проверку
 реального discovery в Claude Code/Codex или живого Figma API.
 Sanitized результаты native assets и границы проверки —
 [verification report](../../docs/superpowers/research/2026-10-26-figma-ops-native-assets-verification.md).

@@ -1,4 +1,4 @@
-"""Installed roots are self-contained; generated compatibility cannot drift."""
+"""The Figma Ops plugin is discoverable and its installed root is self-contained."""
 import hashlib
 import json
 import os
@@ -14,16 +14,16 @@ from test_image import png
 
 ROOT = Path(__file__).resolve().parents[3]
 CANONICAL = ROOT / 'plugins' / 'figma-ops'
-LEGACY = ROOT / 'plugins' / 'figma-lookup'
 COMMANDS = ('doctor', 'inspect', 'search', 'comments', 'thread', 'export', 'fills', 'annotations', 'prototype', 'context', 'bindings')
 
 
 class PackagingTests(unittest.TestCase):
-    def test_host_catalogs_resolve_both_plugins_and_discover_skills(self):
+    def test_host_catalogs_resolve_figma_ops_and_discover_skill(self):
         for host, catalog in (('.claude-plugin', '.claude-plugin/marketplace.json'),
                               ('.codex-plugin', '.agents/plugins/marketplace.json')):
             entries = json.loads((ROOT / catalog).read_text())['plugins']
-            for name, version in (('figma-ops', '1.4.0'), ('figma-lookup', '1.5.0')):
+            self.assertNotIn('figma-lookup', [item['name'] for item in entries])
+            for name, version in (('figma-ops', '1.4.1'),):
                 with self.subTest(host=host, name=name):
                     entry, = [item for item in entries if item['name'] == name]
                     source = entry['source']
@@ -41,7 +41,7 @@ class PackagingTests(unittest.TestCase):
                     self.assertTrue((directory / 'LICENSE').is_file())
 
     def test_all_skill_reference_links_resolve_inside_plugin(self):
-        for plugin in (CANONICAL, LEGACY):
+        for plugin in (CANONICAL,):
             with self.subTest(plugin=plugin.name):
                 skill = plugin / 'skills' / plugin.name / 'SKILL.md'
                 self.assertTrue(skill.is_file())
@@ -58,41 +58,8 @@ class PackagingTests(unittest.TestCase):
                     if path.is_symlink():
                         self.assertTrue(path.resolve().is_relative_to(plugin.resolve()), str(path))
 
-    def test_generated_runtime_references_and_body_match(self):
-        runtime = {p.name: p.read_bytes() for p in (CANONICAL / 'scripts').glob('*.py') if p.name != 'sync-compat.py'}
-        copied = {p.name: p.read_bytes() for p in (LEGACY / 'scripts').glob('*.py')}
-        self.assertEqual(len(runtime), 16)
-        self.assertEqual(copied, runtime)
-        for source in (CANONICAL / 'skills/figma-ops/references').glob('*.md'):
-            self.assertEqual((LEGACY / 'skills/figma-lookup/references' / source.name).read_bytes(), source.read_bytes())
-        canonical = (CANONICAL / 'skills/figma-ops/SKILL.md').read_text()
-        compatibility = (LEGACY / 'skills/figma-lookup/SKILL.md').read_text()
-        self.assertEqual(compatibility.split('---', 2)[2], canonical.split('---', 2)[2])
-        self.assertIn('compatibility', compatibility.split('---', 2)[1].lower())
-
-    def test_sync_is_reproducible_and_excludes_maintenance_tool(self):
-        with tempfile.TemporaryDirectory(prefix='figma sync ') as temporary:
-            root = Path(temporary)
-            for source in (CANONICAL, LEGACY):
-                shutil.copytree(source, root / 'plugins' / source.name)
-            script = root / 'plugins/figma-ops/scripts/sync-compat.py'
-            stale = root / 'plugins/figma-lookup/scripts/obsolete.py'
-            stale.write_text('obsolete')
-            copied = root / 'plugins/figma-lookup/scripts/figma_ops.py'
-            copied.write_text('drift')
-            snapshots = []
-            for _ in range(2):
-                result = subprocess.run([sys.executable, str(script)], cwd=temporary, capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(copied.read_bytes(), (CANONICAL / 'scripts/figma_ops.py').read_bytes())
-                snapshots.append({str(p.relative_to(copied.parents[1])): p.read_bytes()
-                                  for p in copied.parents[1].rglob('*') if p.is_file()})
-            self.assertEqual(snapshots[0], snapshots[1])
-            self.assertFalse(stale.exists())
-            self.assertFalse((copied.parent / 'sync-compat.py').exists())
-
     def test_standalone_asset_verifier_from_cwd_with_spaces(self):
-        for source in (CANONICAL, LEGACY):
+        for source in (CANONICAL,):
             with self.subTest(plugin=source.name), tempfile.TemporaryDirectory(prefix='figma asset install ') as temporary:
                 root = Path(temporary)
                 plugin = root / 'only installed plugin'
@@ -162,7 +129,7 @@ class PackagingTests(unittest.TestCase):
                 print(f'{source.name}: {helper_count} standalone asset helper cases, 1 helper help call')
 
     def test_standalone_cli_from_cwd_with_spaces(self):
-        for source in (CANONICAL, LEGACY):
+        for source in (CANONICAL,):
             with self.subTest(plugin=source.name), tempfile.TemporaryDirectory(prefix='figma install ') as temporary:
                 root = Path(temporary)
                 plugin = root / 'only installed plugin'
