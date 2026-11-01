@@ -68,18 +68,18 @@
       "category": "productivity"
     },
     {
-      "name": "iphone-control",
-      "version": "1.0.2",
-      "description": "Управление физическим iPhone через Appium MCP: экран, XML, ввод и навигация",
+      "name": "phone-control",
+      "version": "1.0.0",
+      "description": "Управление физическими iPhone и Android через Appium MCP и настройка Android на Mac",
       "author": {
         "name": "Yaroslav Mihalev"
       },
-      "source": "./plugins/iphone-control",
+      "source": "./plugins/phone-control",
       "category": "development"
     },
     {
       "name": "setup-iphone-control",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Первоначальная настройка Appium MCP и WebDriverAgent для физического iPhone на Mac",
       "author": {
         "name": "Yaroslav Mihalev"
