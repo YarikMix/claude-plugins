@@ -11,7 +11,7 @@ claude plugin marketplace add YarikMix/agent-utils
 claude plugin install apple-notes-folder@yarikmix-plugins
 claude plugin install peekaboo-control@yarikmix-plugins
 claude plugin install figma-ops@yarikmix-plugins
-claude plugin install iphone-control@yarikmix-plugins
+claude plugin install phone-control@yarikmix-plugins
 claude plugin install setup-iphone-control@yarikmix-plugins
 claude plugin install setup-bash-blesh@yarikmix-plugins
 claude plugin install setup-sdd-ponytail@yarikmix-plugins
@@ -22,7 +22,7 @@ codex plugin add codex-disable-skill@yarikmix-plugins
 codex plugin add codex-vscode-sessions@yarikmix-plugins
 codex plugin add peekaboo-control@yarikmix-plugins
 codex plugin add figma-ops@yarikmix-plugins
-codex plugin add iphone-control@yarikmix-plugins
+codex plugin add phone-control@yarikmix-plugins
 codex plugin add setup-iphone-control@yarikmix-plugins
 codex plugin add setup-bash-blesh@yarikmix-plugins
 codex plugin add setup-sdd-ponytail@yarikmix-plugins
@@ -40,7 +40,7 @@ Codex — `$apple-notes-folder:setup`.
 | [figma-ops](plugins/figma-ops/README.md) | Figma context dossier, design-system bindings, annotations/prototype, поиск текста, полные обсуждения и проверенный экспорт через MCP/REST | Claude Code, Codex |
 | [figma-lookup](plugins/figma-lookup/README.md) | Совместимое имя Figma Ops с автономными runtime и skill | Claude Code, Codex |
 | [peekaboo-control](plugins/peekaboo-control/README.md) | Управление macOS через Peekaboo MCP и Desktop Bridge | Claude Code, Codex |
-| [iphone-control](plugins/iphone-control/README.md) | Управление физическим iPhone через Appium MCP | Claude Code, Codex |
+| [phone-control](plugins/phone-control/README.md) | Управление физическими iPhone и Android через Appium MCP; настройка Android | Claude Code, Codex |
 | [setup-iphone-control](plugins/setup-iphone-control/README.md) | Настройка Appium MCP и подписи WDA на Mac | Claude Code, Codex |
 | [setup-bash-blesh](plugins/setup-bash-blesh/README.md) | Настройка интерактивного Bash с ble.sh в Ubuntu под WSL | Claude Code, Codex |
 | [setup-sdd-ponytail](plugins/setup-sdd-ponytail/README.md) | Настройка глобальных инструкций для Superpowers SDD и Ponytail | Claude Code, Codex |
@@ -56,7 +56,7 @@ Apple Notes 2.0.0 принимает картинки только из подт
 `dist/` включён в плагин: установка не требует npm или сборки.
 
 Appium-плагины добавляют инструкции; подключение MCP выполняется отдельно через
-`setup-iphone-control` по запросу пользователя.
+`setup-iphone-control` для iPhone или `setup-android-control` из `phone-control` для Android по запросу пользователя.
 
 Setup Bash + ble.sh добавляет инструкции и при установке не меняет dotfiles.
 Явный вызов: Claude Code — `/setup-bash-blesh:setup-bash-blesh`,

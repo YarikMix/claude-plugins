@@ -30,9 +30,9 @@ codex plugin add setup-iphone-control@yarikmix-plugins
 Симуляторы и управление через iPhone Mirroring в этот путь не входят.
 
 Инструкция: [SKILL.md](skills/setup-iphone-control/SKILL.md).
-Управление после настройки: [iphone-control](../iphone-control/README.md).
+Управление после настройки: [iphone-control](https://github.com/YarikMix/agent-utils/tree/main/plugins/phone-control).
 Границы исходной живой проверки и непроверенные сценарии:
-[validation.md](../iphone-control/skills/iphone-control/references/validation.md).
+[validation.md](https://github.com/YarikMix/agent-utils/blob/main/plugins/phone-control/skills/iphone-control/references/validation.md).
 Первоначальная установка на втором чистом Mac и discovery скилла клиентским CLI
 не подтверждены. Новая живая проверка при публикации не выполнялась.
 
